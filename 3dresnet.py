@@ -63,8 +63,12 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=DEFAULTS["lr"])
     parser.add_argument("--weight_decay", type=float, default=DEFAULTS["weight_decay"])
     parser.add_argument("--num_workers", type=int, default=DEFAULTS["num_workers"])
+    parser.add_argument("--persistent_workers", action="store_true", help="Keep DataLoader workers alive between epochs")
+    parser.add_argument("--prefetch_factor", type=int, default=2, help="Batches prefetched per worker when --num_workers > 0")
+    parser.add_argument("--max_cache_chunks", type=int, default=2, help="Max chunked_samples pkl files cached per dataset/worker; <=0 caches all chunks")
     parser.add_argument("--seed", type=int, default=DEFAULTS["seed"])
     parser.add_argument("--eval_every", type=int, default=1)
+    parser.add_argument("--stats_every", type=int, default=1, help="Save train score stats every N epochs; 0 disables during training")
     parser.add_argument("--save_dir", default=None)
     parser.add_argument("--checkpoint", default=None, help="Checkpoint path for test mode or resume")
     parser.add_argument("--resume", action="store_true", help="Resume optimizer/model from --checkpoint in train mode")
@@ -146,7 +150,7 @@ def latest_training_stats_path(save_dir: Path) -> Optional[Path]:
 
 
 class ChunkedSamplesDataset(Dataset):
-    def __init__(self, chunk_dir: Path):
+    def __init__(self, chunk_dir: Path, max_cache_chunks: int = 2):
         self.chunk_dir = Path(chunk_dir)
         self.chunk_files = sorted(self.chunk_dir.glob("chunked_samples_*.pkl"), key=lambda p: p.name)
         if not self.chunk_files:
@@ -155,6 +159,7 @@ class ChunkedSamplesDataset(Dataset):
         self.chunk_lengths: List[int] = []
         self.cum_lengths: List[int] = []
         self.cache: Dict[int, Dict[str, np.ndarray]] = {}
+        self.max_cache_chunks = max_cache_chunks if max_cache_chunks > 0 else len(self.chunk_files)
 
         total = 0
         for chunk_file in self.chunk_files:
@@ -166,7 +171,10 @@ class ChunkedSamplesDataset(Dataset):
 
         self.total_len = total
         self._pred_frames: Optional[np.ndarray] = None
-        print(f"[ChunkedSamplesDataset] {self.chunk_dir} | files={len(self.chunk_files)} | samples={self.total_len}")
+        print(
+            f"[ChunkedSamplesDataset] {self.chunk_dir} | files={len(self.chunk_files)} "
+            f"| samples={self.total_len} | max_cache_chunks={self.max_cache_chunks}"
+        )
 
     def __len__(self):
         return self.total_len
@@ -178,7 +186,7 @@ class ChunkedSamplesDataset(Dataset):
 
     def _load_chunk(self, chunk_idx: int):
         if chunk_idx not in self.cache:
-            if len(self.cache) >= 2:
+            if len(self.cache) >= self.max_cache_chunks:
                 self.cache.pop(next(iter(self.cache)))
             self.cache[chunk_idx] = joblib.load(self.chunk_files[chunk_idx], mmap_mode="r")
         return self.cache[chunk_idx]
@@ -744,8 +752,29 @@ def load_checkpoint(path: Path, model, optimizer=None, device="cpu"):
     return ckpt
 
 
-def make_loader(dataset, batch_size, shuffle, num_workers, pin_memory):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory)
+def make_loader(dataset, batch_size, shuffle, num_workers, pin_memory, persistent_workers=False, prefetch_factor=2):
+    kwargs = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+    }
+    if num_workers > 0:
+        kwargs["persistent_workers"] = persistent_workers
+        kwargs["prefetch_factor"] = prefetch_factor
+    return DataLoader(dataset, **kwargs)
+
+
+def make_loader_from_args(dataset, args, shuffle, device):
+    return make_loader(
+        dataset,
+        args.batch_size,
+        shuffle,
+        args.num_workers,
+        device.type == "cuda",
+        args.persistent_workers,
+        args.prefetch_factor,
+    )
 
 
 def init_model_optimizer(device, args):
@@ -846,14 +875,14 @@ def run_standard_training(args, device, use_amp, train_dataset, test_dataset, gt
 
     train_subset = Subset(train_dataset, train_idx.tolist())
     val_subset = Subset(train_dataset, val_idx.tolist())
-    train_loader = make_loader(train_subset, args.batch_size, True, args.num_workers, device.type == "cuda")
-    train_stats_loader = make_loader(train_subset, args.batch_size, False, args.num_workers, device.type == "cuda")
-    val_loader = make_loader(val_subset, args.batch_size, False, args.num_workers, device.type == "cuda")
+    train_loader = make_loader_from_args(train_subset, args, True, device)
+    train_stats_loader = make_loader_from_args(train_subset, args, False, device)
+    val_loader = make_loader_from_args(val_subset, args, False, device)
     test_loader = None
     if args.eval_test_during_train:
         if test_dataset is None or gt_concat is None or testing_frame_counts is None:
             raise ValueError("--eval_test_during_train requires testing data and ground truth")
-        test_loader = make_loader(test_dataset, args.batch_size, False, args.num_workers, device.type == "cuda")
+        test_loader = make_loader_from_args(test_dataset, args, False, device)
 
     model, optimizer, scaler = init_model_optimizer(device, args)
     best_path = save_dir / "best.pth"
@@ -936,15 +965,16 @@ def run_standard_training(args, device, use_amp, train_dataset, test_dataset, gt
                 result["best_checkpoint_updated"] = True
 
         snapshot = save_hf_snapshot(save_dir, model, optimizer, epoch + 1, step, best_val_loss, metric_name="val_loss", max_to_save=5)
-        stats_path = training_stats_path(save_dir, epoch + 1)
-        train_stats = save_training_stats(model, train_stats_loader, device, stats_path)
-        result["training_stats"] = str(stats_path)
-        result["training_stats_summary"] = {
-            "motion_mean": train_stats["motion_mean"],
-            "motion_std": train_stats["motion_std"],
-            "frame_mean": train_stats["frame_mean"],
-            "frame_std": train_stats["frame_std"],
-        }
+        if args.stats_every > 0 and (epoch + 1) % args.stats_every == 0:
+            stats_path = training_stats_path(save_dir, epoch + 1)
+            train_stats = save_training_stats(model, train_stats_loader, device, stats_path)
+            result["training_stats"] = str(stats_path)
+            result["training_stats_summary"] = {
+                "motion_mean": train_stats["motion_mean"],
+                "motion_std": train_stats["motion_std"],
+                "frame_mean": train_stats["frame_mean"],
+                "frame_std": train_stats["frame_std"],
+            }
         result["train_duration_sec"] = train_duration_sec
         result["epoch_duration_sec"] = time.perf_counter() - epoch_start
         result["epoch_started_at_utc"] = epoch_started_at
@@ -982,7 +1012,7 @@ def run_kfold_training(args, device, use_amp, train_dataset, test_dataset, gt_co
     if args.eval_test_during_train:
         if test_dataset is None or gt_concat is None or testing_frame_counts is None:
             raise ValueError("--eval_test_during_train requires testing data and ground truth")
-        test_loader = make_loader(test_dataset, args.batch_size, False, args.num_workers, device.type == "cuda")
+        test_loader = make_loader_from_args(test_dataset, args, False, device)
 
     requested_folds = [args.fold] if args.fold is not None else list(range(n_splits))
     fold_summaries = []
@@ -1021,9 +1051,9 @@ def run_kfold_training(args, device, use_amp, train_dataset, test_dataset, gt_co
 
         train_subset = Subset(train_dataset, train_idx.tolist())
         val_subset = Subset(train_dataset, val_idx.tolist())
-        train_loader = make_loader(train_subset, args.batch_size, True, args.num_workers, device.type == "cuda")
-        train_stats_loader = make_loader(train_subset, args.batch_size, False, args.num_workers, device.type == "cuda")
-        val_loader = make_loader(val_subset, args.batch_size, False, args.num_workers, device.type == "cuda")
+        train_loader = make_loader_from_args(train_subset, args, True, device)
+        train_stats_loader = make_loader_from_args(train_subset, args, False, device)
+        val_loader = make_loader_from_args(val_subset, args, False, device)
 
         model, optimizer, scaler = init_model_optimizer(device, args)
         best_path = fold_dir / "best.pth"
@@ -1114,15 +1144,16 @@ def run_kfold_training(args, device, use_amp, train_dataset, test_dataset, gt_co
                     result["best_checkpoint_updated"] = True
 
             snapshot = save_hf_snapshot(fold_dir, model, optimizer, epoch + 1, step, best_val_loss, metric_name="val_loss", max_to_save=5)
-            stats_path = training_stats_path(fold_dir, epoch + 1)
-            train_stats = save_training_stats(model, train_stats_loader, device, stats_path)
-            result["training_stats"] = str(stats_path)
-            result["training_stats_summary"] = {
-                "motion_mean": train_stats["motion_mean"],
-                "motion_std": train_stats["motion_std"],
-                "frame_mean": train_stats["frame_mean"],
-                "frame_std": train_stats["frame_std"],
-            }
+            if args.stats_every > 0 and (epoch + 1) % args.stats_every == 0:
+                stats_path = training_stats_path(fold_dir, epoch + 1)
+                train_stats = save_training_stats(model, train_stats_loader, device, stats_path)
+                result["training_stats"] = str(stats_path)
+                result["training_stats_summary"] = {
+                    "motion_mean": train_stats["motion_mean"],
+                    "motion_std": train_stats["motion_std"],
+                    "frame_mean": train_stats["frame_mean"],
+                    "frame_std": train_stats["frame_std"],
+                }
             result["train_duration_sec"] = train_duration_sec
             result["epoch_duration_sec"] = time.perf_counter() - epoch_start
             result["epoch_started_at_utc"] = epoch_started_at
@@ -1179,7 +1210,7 @@ def run_standard_test(args, device, train_dataset, test_dataset, gt_concat, test
             "mode": "standard",
         },
     )
-    test_loader = make_loader(test_dataset, args.batch_size, False, args.num_workers, device.type == "cuda")
+    test_loader = make_loader_from_args(test_dataset, args, False, device)
 
     model, _, _ = init_model_optimizer(device, args)
     ckpt_path = Path(args.checkpoint) if args.checkpoint is not None else save_dir / "best.pth"
@@ -1194,8 +1225,7 @@ def run_standard_test(args, device, train_dataset, test_dataset, gt_concat, test
             best_epoch = json.loads(summary_path.read_text()).get("best_epoch")
             if best_epoch is not None:
                 candidate = training_stats_path(save_dir, int(best_epoch))
-                if candidate.exists():
-                    stats_path = candidate
+                stats_path = candidate
         except json.JSONDecodeError:
             stats_path = None
     if stats_path is None:
@@ -1204,7 +1234,7 @@ def run_standard_test(args, device, train_dataset, test_dataset, gt_concat, test
         train_score_stats = load_training_stats(stats_path)
     else:
         stats_dataset = maybe_training_stats_subset(train_dataset, save_dir)
-        train_stats_loader = make_loader(stats_dataset, args.batch_size, False, args.num_workers, device.type == "cuda")
+        train_stats_loader = make_loader_from_args(stats_dataset, args, False, device)
         train_score_stats = save_training_stats(model, train_stats_loader, device, stats_path)
     eval_metrics = evaluate_frame_auc(
         model,
@@ -1251,7 +1281,7 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
     )
     n_splits = args.kfold
     folds = list(iter_kfold_indices(train_dataset, n_splits, args.seed, args.split_unit))
-    test_loader = make_loader(test_dataset, args.batch_size, False, args.num_workers, device.type == "cuda")
+    test_loader = make_loader_from_args(test_dataset, args, False, device)
 
     requested_folds = [args.fold] if args.fold is not None else list(range(n_splits))
     frame_scores_list = []
@@ -1279,8 +1309,7 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
                 best_epoch = json.loads(summary_path.read_text()).get("best_epoch")
                 if best_epoch is not None:
                     candidate = training_stats_path(fold_dir, int(best_epoch))
-                    if candidate.exists():
-                        stats_path = candidate
+                    stats_path = candidate
             except json.JSONDecodeError:
                 stats_path = None
         if stats_path is None:
@@ -1289,7 +1318,7 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
             train_score_stats = load_training_stats(stats_path)
         else:
             train_subset = Subset(train_dataset, train_idx.tolist())
-            train_stats_loader = make_loader(train_subset, args.batch_size, False, args.num_workers, device.type == "cuda")
+            train_stats_loader = make_loader_from_args(train_subset, args, False, device)
             train_score_stats = save_training_stats(model, train_stats_loader, device, stats_path)
         eval_metrics = evaluate_frame_auc(
             model,
@@ -1364,12 +1393,12 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() or str(args.device) == "cpu" else "cpu")
     use_amp = DEFAULTS["use_amp"] and device.type == "cuda"
 
-    train_dataset = ChunkedSamplesDataset(train_dir)
+    train_dataset = ChunkedSamplesDataset(train_dir, max_cache_chunks=args.max_cache_chunks)
     test_dataset = None
     gt_concat = None
     testing_frame_counts = None
     if args.mode == "test" or args.eval_test_during_train:
-        test_dataset = ChunkedSamplesDataset(test_dir)
+        test_dataset = ChunkedSamplesDataset(test_dir, max_cache_chunks=args.max_cache_chunks)
         gt_concat, testing_frame_counts, gt_path = load_gt_labels(dataset_base_dir, args.dataset_name)
         print(f"[GT] {gt_path} | frames={int(np.sum(testing_frame_counts))} | videos={len(testing_frame_counts)}")
 
