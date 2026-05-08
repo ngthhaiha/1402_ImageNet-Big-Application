@@ -1,0 +1,83 @@
+{
+  "dataset": "avenue",
+  "training_chunks": [
+    {
+      "path": "data/avenue/training/chunked_samples/chunked_samples_00.pkl",
+      "samples": 20000,
+      "global_start": 0,
+      "global_end": 20000
+    },
+    {
+      "path": "data/avenue/training/chunked_samples/chunked_samples_01.pkl",
+      "samples": 20000,
+      "global_start": 20000,
+      "global_end": 40000
+    },
+    {
+      "path": "data/avenue/training/chunked_samples/chunked_samples_02.pkl",
+      "samples": 16775,
+      "global_start": 40000,
+      "global_end": 56775
+    }
+  ],
+  "total_samples": 56775,
+  "kfold": 5,
+  "seed": 42,
+  "stage1_epochs": 50,
+  "epochs": 50,
+  "stage1_run_name": "avenue_ML_MemAE_SC_kfold5_e50_seed42",
+  "run_name": "avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42",
+  "stage2_fallback_pretrained": "./ckpt/avenue_ML_MemAE_SC/best.pth",
+  "folds": [
+    {
+      "fold": 0,
+      "train_samples": 45420,
+      "val_samples": 11355,
+      "train_indices": "data/avenue/kfold5_seed42/fold_0/train_indices.npy",
+      "val_indices": "data/avenue/kfold5_seed42/fold_0/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_0.yaml",
+      "stage1_checkpoint": "ckpt/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_0/best.pth",
+      "cfg": "cfgs/generated/avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_0.yaml"
+    },
+    {
+      "fold": 1,
+      "train_samples": 45420,
+      "val_samples": 11355,
+      "train_indices": "data/avenue/kfold5_seed42/fold_1/train_indices.npy",
+      "val_indices": "data/avenue/kfold5_seed42/fold_1/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_1.yaml",
+      "stage1_checkpoint": "ckpt/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_1/best.pth",
+      "cfg": "cfgs/generated/avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_1.yaml"
+    },
+    {
+      "fold": 2,
+      "train_samples": 45420,
+      "val_samples": 11355,
+      "train_indices": "data/avenue/kfold5_seed42/fold_2/train_indices.npy",
+      "val_indices": "data/avenue/kfold5_seed42/fold_2/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_2.yaml",
+      "stage1_checkpoint": "ckpt/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_2/best.pth",
+      "cfg": "cfgs/generated/avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_2.yaml"
+    },
+    {
+      "fold": 3,
+      "train_samples": 45420,
+      "val_samples": 11355,
+      "train_indices": "data/avenue/kfold5_seed42/fold_3/train_indices.npy",
+      "val_indices": "data/avenue/kfold5_seed42/fold_3/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_3.yaml",
+      "stage1_checkpoint": "ckpt/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_3/best.pth",
+      "cfg": "cfgs/generated/avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_3.yaml"
+    },
+    {
+      "fold": 4,
+      "train_samples": 45420,
+      "val_samples": 11355,
+      "train_indices": "data/avenue/kfold5_seed42/fold_4/train_indices.npy",
+      "val_indices": "data/avenue/kfold5_seed42/fold_4/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_4.yaml",
+      "stage1_checkpoint": "ckpt/avenue_ML_MemAE_SC_kfold5_e50_seed42/fold_4/best.pth",
+      "cfg": "cfgs/generated/avenue_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_4.yaml"
+    }
+  ]
+}

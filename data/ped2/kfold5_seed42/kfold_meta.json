@@ -1,0 +1,50 @@
+{
+  "dataset": "ped2",
+  "source_chunk": "data/ped2/training/chunked_samples/chunked_samples_00.pkl",
+  "kfold": 5,
+  "seed": 42,
+  "epochs": 50,
+  "run_name": "ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42",
+  "folds": [
+    {
+      "fold": 0,
+      "train_samples": 22248,
+      "val_samples": 5562,
+      "train_indices": "data/ped2/kfold5_seed42/fold_0/train_indices.npy",
+      "val_indices": "data/ped2/kfold5_seed42/fold_0/val_indices.npy",
+      "cfg": "cfgs/generated/ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_0.yaml"
+    },
+    {
+      "fold": 1,
+      "train_samples": 22248,
+      "val_samples": 5562,
+      "train_indices": "data/ped2/kfold5_seed42/fold_1/train_indices.npy",
+      "val_indices": "data/ped2/kfold5_seed42/fold_1/val_indices.npy",
+      "cfg": "cfgs/generated/ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_1.yaml"
+    },
+    {
+      "fold": 2,
+      "train_samples": 22248,
+      "val_samples": 5562,
+      "train_indices": "data/ped2/kfold5_seed42/fold_2/train_indices.npy",
+      "val_indices": "data/ped2/kfold5_seed42/fold_2/val_indices.npy",
+      "cfg": "cfgs/generated/ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_2.yaml"
+    },
+    {
+      "fold": 3,
+      "train_samples": 22248,
+      "val_samples": 5562,
+      "train_indices": "data/ped2/kfold5_seed42/fold_3/train_indices.npy",
+      "val_indices": "data/ped2/kfold5_seed42/fold_3/val_indices.npy",
+      "cfg": "cfgs/generated/ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_3.yaml"
+    },
+    {
+      "fold": 4,
+      "train_samples": 22248,
+      "val_samples": 5562,
+      "train_indices": "data/ped2/kfold5_seed42/fold_4/train_indices.npy",
+      "val_indices": "data/ped2/kfold5_seed42/fold_4/val_indices.npy",
+      "cfg": "cfgs/generated/ped2_ML_MemAE_SC_CVAE_kfold5_e50_seed42/fold_4.yaml"
+    }
+  ]
+}

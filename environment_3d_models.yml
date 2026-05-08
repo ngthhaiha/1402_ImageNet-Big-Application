@@ -1,0 +1,17 @@
+name: hf2vad-3d
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - tqdm
+  - joblib
+  - pip:
+      - --index-url https://download.pytorch.org/whl/cu130
+      - torch==2.10.0
+      - torchvision==0.25.0
