@@ -1,0 +1,162 @@
+{
+  "dataset": "shanghaitech2",
+  "dataset_logic": "shanghaitech",
+  "training_chunks": [
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_00.pkl",
+      "samples": 20000,
+      "global_start": 0,
+      "global_end": 20000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_01.pkl",
+      "samples": 20000,
+      "global_start": 20000,
+      "global_end": 40000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_02.pkl",
+      "samples": 20000,
+      "global_start": 40000,
+      "global_end": 60000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_03.pkl",
+      "samples": 20000,
+      "global_start": 60000,
+      "global_end": 80000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_04.pkl",
+      "samples": 20000,
+      "global_start": 80000,
+      "global_end": 100000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_05.pkl",
+      "samples": 20000,
+      "global_start": 100000,
+      "global_end": 120000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_06.pkl",
+      "samples": 20000,
+      "global_start": 120000,
+      "global_end": 140000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_07.pkl",
+      "samples": 20000,
+      "global_start": 140000,
+      "global_end": 160000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_08.pkl",
+      "samples": 20000,
+      "global_start": 160000,
+      "global_end": 180000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_09.pkl",
+      "samples": 20000,
+      "global_start": 180000,
+      "global_end": 200000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_10.pkl",
+      "samples": 20000,
+      "global_start": 200000,
+      "global_end": 220000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_11.pkl",
+      "samples": 20000,
+      "global_start": 220000,
+      "global_end": 240000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_12.pkl",
+      "samples": 20000,
+      "global_start": 240000,
+      "global_end": 260000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_13.pkl",
+      "samples": 20000,
+      "global_start": 260000,
+      "global_end": 280000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_14.pkl",
+      "samples": 20000,
+      "global_start": 280000,
+      "global_end": 300000
+    },
+    {
+      "path": "data/shanghaitech2/training/chunked_samples/chunked_samples_15.pkl",
+      "samples": 10028,
+      "global_start": 300000,
+      "global_end": 310028
+    }
+  ],
+  "total_samples": 310028,
+  "kfold": 5,
+  "seed": 42,
+  "stage1_epochs": 1,
+  "epochs": 1,
+  "stage1_run_name": "shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42",
+  "run_name": "shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42",
+  "stage2_fallback_pretrained": "./ckpt/shanghaitech_ML_MemAE_SC/best.pth",
+  "folds": [
+    {
+      "fold": 0,
+      "train_samples": 248022,
+      "val_samples": 62006,
+      "train_indices": "data/shanghaitech2/kfold5_seed42/fold_0/train_indices.npy",
+      "val_indices": "data/shanghaitech2/kfold5_seed42/fold_0/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_0.yaml",
+      "stage1_checkpoint": "ckpt/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_0/best.pth",
+      "cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42/fold_0.yaml"
+    },
+    {
+      "fold": 1,
+      "train_samples": 248022,
+      "val_samples": 62006,
+      "train_indices": "data/shanghaitech2/kfold5_seed42/fold_1/train_indices.npy",
+      "val_indices": "data/shanghaitech2/kfold5_seed42/fold_1/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_1.yaml",
+      "stage1_checkpoint": "ckpt/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_1/best.pth",
+      "cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42/fold_1.yaml"
+    },
+    {
+      "fold": 2,
+      "train_samples": 248022,
+      "val_samples": 62006,
+      "train_indices": "data/shanghaitech2/kfold5_seed42/fold_2/train_indices.npy",
+      "val_indices": "data/shanghaitech2/kfold5_seed42/fold_2/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_2.yaml",
+      "stage1_checkpoint": "ckpt/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_2/best.pth",
+      "cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42/fold_2.yaml"
+    },
+    {
+      "fold": 3,
+      "train_samples": 248023,
+      "val_samples": 62005,
+      "train_indices": "data/shanghaitech2/kfold5_seed42/fold_3/train_indices.npy",
+      "val_indices": "data/shanghaitech2/kfold5_seed42/fold_3/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_3.yaml",
+      "stage1_checkpoint": "ckpt/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_3/best.pth",
+      "cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42/fold_3.yaml"
+    },
+    {
+      "fold": 4,
+      "train_samples": 248023,
+      "val_samples": 62005,
+      "train_indices": "data/shanghaitech2/kfold5_seed42/fold_4/train_indices.npy",
+      "val_indices": "data/shanghaitech2/kfold5_seed42/fold_4/val_indices.npy",
+      "stage1_cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_4.yaml",
+      "stage1_checkpoint": "ckpt/shanghaitech2_ML_MemAE_SC_kfold5_e1_seed42/fold_4/best.pth",
+      "cfg": "cfgs/generated/shanghaitech2_ML_MemAE_SC_CVAE_kfold5_e1_seed42/fold_4.yaml"
+    }
+  ]
+}

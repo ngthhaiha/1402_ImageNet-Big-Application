@@ -26,14 +26,16 @@ FORCE=${FORCE:-0}          # set FORCE=1 to reuse an existing experiment dir
 RESUME=${RESUME:-0}        # set RESUME=1 to continue from latest model.pth-N per fold
 SPLIT_ONLY=${SPLIT_ONLY:-0}
 
-DATASET=shanghaitech
-SPLIT_ROOT=${SPLIT_ROOT:-data/${DATASET}/kfold${KFOLD}_seed${SEED}}
-STAGE1_RUN_NAME=${STAGE1_RUN_NAME:-shanghaitech_ML_MemAE_SC_kfold${KFOLD}_e${STAGE1_EPOCHS}_seed${SEED}}
-RUN_NAME=${RUN_NAME:-shanghaitech_ML_MemAE_SC_CVAE_kfold${KFOLD}_e${EPOCHS}_seed${SEED}}
+DATASET_LOGIC=${DATASET_LOGIC:-shanghaitech}
+DATASET_DIR=${DATASET_DIR:-shanghaitech}
+DATASET_TAG=${DATASET_TAG:-$DATASET_DIR}
+SPLIT_ROOT=${SPLIT_ROOT:-data/${DATASET_DIR}/kfold${KFOLD}_seed${SEED}}
+STAGE1_RUN_NAME=${STAGE1_RUN_NAME:-${DATASET_TAG}_ML_MemAE_SC_kfold${KFOLD}_e${STAGE1_EPOCHS}_seed${SEED}}
+RUN_NAME=${RUN_NAME:-${DATASET_TAG}_ML_MemAE_SC_CVAE_kfold${KFOLD}_e${EPOCHS}_seed${SEED}}
 STAGE1_CFG_ROOT=${STAGE1_CFG_ROOT:-cfgs/generated/${STAGE1_RUN_NAME}}
 CFG_ROOT=${CFG_ROOT:-cfgs/generated/${RUN_NAME}}
-TRAIN_DIR=${TRAIN_DIR:-data/${DATASET}/training/chunked_samples}
-TEST_CHUNK=${TEST_CHUNK:-data/${DATASET}/testing/chunked_samples}
+TRAIN_DIR=${TRAIN_DIR:-data/${DATASET_DIR}/training/chunked_samples}
+TEST_CHUNK=${TEST_CHUNK:-data/${DATASET_DIR}/testing/chunked_samples}
 ML_MEMAE_PRETRAINED=${ML_MEMAE_PRETRAINED:-./ckpt/shanghaitech_ML_MemAE_SC/best.pth}
 
 if [[ ! -f "$BASE_CFG" ]]; then
@@ -84,6 +86,8 @@ stage1_cfg_root = Path("$STAGE1_CFG_ROOT")
 cfg_root = Path("$CFG_ROOT")
 stage1_run_name = "$STAGE1_RUN_NAME"
 run_name = "$RUN_NAME"
+dataset_dir = "$DATASET_DIR"
+dataset_logic = "$DATASET_LOGIC"
 kfold = int("$KFOLD")
 seed = int("$SEED")
 epochs = int("$EPOCHS")
@@ -129,7 +133,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(total_s
     np.save(val_index_path, val_idx.astype(np.int64))
 
     stage1_cfg = dict(stage1_base_cfg)
-    stage1_cfg["dataset_name"] = "shanghaitech"
+    stage1_cfg["dataset_name"] = dataset_logic
+    stage1_cfg["dataset_dir_name"] = dataset_dir
     stage1_cfg["dataset_base_dir"] = "./data"
     stage1_cfg["exp_name"] = f"{stage1_run_name}/fold_{fold_idx}"
     stage1_cfg["num_epochs"] = stage1_epochs
@@ -142,7 +147,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(total_s
     stage1_cfg_path.write_text(yaml.safe_dump(stage1_cfg, sort_keys=False))
 
     cfg = dict(base_cfg)
-    cfg["dataset_name"] = "shanghaitech"
+    cfg["dataset_name"] = dataset_logic
+    cfg["dataset_dir_name"] = dataset_dir
     cfg["dataset_base_dir"] = "./data"
     cfg["exp_name"] = f"{run_name}/fold_{fold_idx}"
     cfg["num_epochs"] = epochs
@@ -167,7 +173,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(total_s
     })
 
 meta = {
-    "dataset": "shanghaitech",
+    "dataset": dataset_dir,
+    "dataset_logic": dataset_logic,
     "training_chunks": chunk_meta,
     "total_samples": int(total_samples),
     "kfold": kfold,

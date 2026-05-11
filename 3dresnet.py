@@ -22,6 +22,7 @@ from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 
+from datasets.dataset import normalize_dataset_name, resolve_dataset_dir_name
 from utils.eval_utils import save_evaluation_curves
 
 
@@ -55,7 +56,11 @@ def parse_args():
         description="HF2VAD-like reconstruction + prediction using 3D ResNet on chunked_samples"
     )
     parser.add_argument("--mode", choices=["train", "test"], required=True)
-    parser.add_argument("--dataset_name", choices=["ped2", "avenue", "shanghaitech"], default="avenue")
+    parser.add_argument(
+        "--dataset_name",
+        choices=["ped2", "UCSDped2", "ucsdped2", "uscdped2", "avenue", "shanghaitech"],
+        default="avenue",
+    )
     parser.add_argument("--dataset_base_dir", default="./data")
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--epochs", type=int, default=DEFAULTS["epochs"])
@@ -519,12 +524,25 @@ def load_pickle_compat(path: Path):
             return NumpyCompatUnpickler(f).load()
 
 
-def load_gt_labels(dataset_base_dir: Path, dataset_name: str):
-    gt_dir = dataset_base_dir / dataset_name / "ground_truth_demo"
-    candidates = ["gt_label_12fps.json", "gt_label.json"] if dataset_name == "shanghaitech" else ["gt_label.json"]
-    gt_path = next((gt_dir / name for name in candidates if (gt_dir / name).exists()), None)
+def load_gt_labels(dataset_base_dir: Path, dataset_name: str, dataset_dir_name: Optional[str] = None):
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = dataset_dir_name or resolve_dataset_dir_name(dataset_base_dir, dataset_name)
+    candidates = (
+        ["gt_label_12fps.json", "gt_label.json"]
+        if dataset_logic_name == "shanghaitech"
+        else ["gt_label.json"]
+    )
+    gt_dirs = [dataset_base_dir / dataset_dir_name / "ground_truth_demo"]
+    fallback_gt_dir = dataset_base_dir / dataset_logic_name / "ground_truth_demo"
+    if fallback_gt_dir not in gt_dirs:
+        gt_dirs.append(fallback_gt_dir)
+
+    gt_path = next(
+        (gt_dir / name for gt_dir in gt_dirs for name in candidates if (gt_dir / name).exists()),
+        None,
+    )
     if gt_path is None:
-        raise FileNotFoundError(f"No ground-truth file found in {gt_dir}")
+        raise FileNotFoundError(f"No ground-truth file found in {', '.join(str(path) for path in gt_dirs)}")
 
     gt = load_pickle_compat(gt_path)
     gt_items = _sorted_gt_items(gt)
@@ -1385,10 +1403,13 @@ def main():
     set_seed(args.seed)
 
     dataset_base_dir = Path(args.dataset_base_dir)
-    train_dir = dataset_base_dir / args.dataset_name / "training" / "chunked_samples"
-    test_dir = dataset_base_dir / args.dataset_name / "testing" / "chunked_samples"
+    dataset_logic_name = normalize_dataset_name(args.dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_base_dir, args.dataset_name)
+    train_dir = dataset_base_dir / dataset_dir_name / "training" / "chunked_samples"
+    test_dir = dataset_base_dir / dataset_dir_name / "testing" / "chunked_samples"
     save_dir = build_save_dir(args)
     save_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[DATASET] requested={args.dataset_name} dir={dataset_dir_name} logic={dataset_logic_name}")
 
     device = torch.device(args.device if torch.cuda.is_available() or str(args.device) == "cpu" else "cpu")
     use_amp = DEFAULTS["use_amp"] and device.type == "cuda"
@@ -1399,7 +1420,11 @@ def main():
     testing_frame_counts = None
     if args.mode == "test" or args.eval_test_during_train:
         test_dataset = ChunkedSamplesDataset(test_dir, max_cache_chunks=args.max_cache_chunks)
-        gt_concat, testing_frame_counts, gt_path = load_gt_labels(dataset_base_dir, args.dataset_name)
+        gt_concat, testing_frame_counts, gt_path = load_gt_labels(
+            dataset_base_dir,
+            dataset_logic_name,
+            dataset_dir_name,
+        )
         print(f"[GT] {gt_path} | frames={int(np.sum(testing_frame_counts))} | videos={len(testing_frame_counts)}")
 
     if args.kfold < 1:

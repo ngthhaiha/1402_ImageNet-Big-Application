@@ -25,10 +25,15 @@ data/avenue/training/
 
 data/ped2/testing/
 data/ped2/training/
+data/UCSDped2/testing/
+data/UCSDped2/training/
 
 
 data/shanghaitech/testing/
 data/shanghaitech/training/
+
+data/shanghaitech2/testing/
+data/shanghaitech2/training/
 
 
 hf2vad_bbox/

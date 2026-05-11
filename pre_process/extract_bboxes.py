@@ -5,7 +5,13 @@ import cv2
 import torch
 from tqdm import tqdm
 
-from datasets.dataset import get_dataset, img_tensor2numpy, img_batch_tensor2numpy
+from datasets.dataset import (
+    get_dataset,
+    img_tensor2numpy,
+    img_batch_tensor2numpy,
+    normalize_dataset_name,
+    resolve_dataset_dir_name,
+)
 from pre_process.mmdet_utils import init_detector, inference_detector
 
 torch.backends.cudnn.benchmark = True
@@ -40,6 +46,7 @@ DATASET_CFGS = {
 
 
 def getObjBboxes(img, model, dataset_name):
+    dataset_name = normalize_dataset_name(dataset_name)
     result = inference_detector(model, img)
 
     CONF_THR = DATASET_CFGS[dataset_name]["conf_thr"]
@@ -77,6 +84,7 @@ def getObjBboxes(img, model, dataset_name):
 
 
 def delCoverBboxes(bboxes, dataset_name):
+    dataset_name = normalize_dataset_name(dataset_name)
     assert bboxes.ndim == 2
     assert bboxes.shape[1] == 4
 
@@ -117,6 +125,7 @@ def delCoverBboxes(bboxes, dataset_name):
 
 
 def getFgBboxes(cur_img, img_batch, bboxes, dataset_name):
+    dataset_name = normalize_dataset_name(dataset_name)
     area_thr = DATASET_CFGS[dataset_name]["contour_min_area"]
     binary_thr = DATASET_CFGS[dataset_name]["binary_thr"]
     gauss_mask_size = DATASET_CFGS[dataset_name]["gauss_mask_size"]
@@ -163,13 +172,15 @@ def getFgBboxes(cur_img, img_batch, bboxes, dataset_name):
 
 
 def obj_bboxes_extraction(dataset_root, dataset_name, mode):
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, dataset_name)
     # Use a MMDetection 3.x config/checkpoint pair
     mm_det_config_file = 'assets/rtmdet_tiny_8xb32-300e_coco.py'
     mm_det_ckpt_file = 'assets/rtmdet_tiny_8xb32-300e_coco_20220902_112414-78e30dcc.pth'
 
     dataset = get_dataset(
-        dataset_name=dataset_name,
-        dir=os.path.join(dataset_root, dataset_name),
+        dataset_name=dataset_logic_name,
+        dir=os.path.join(dataset_root, dataset_dir_name),
         context_frame_num=1,
         mode=mode
     )
@@ -185,10 +196,10 @@ def obj_bboxes_extraction(dataset_root, dataset_name, mode):
         cur_img = img_tensor2numpy(batch[1])
         h, w = cur_img.shape[0], cur_img.shape[1]
 
-        obj_bboxes = getObjBboxes(cur_img, mm_det_model, dataset_name)
-        obj_bboxes = delCoverBboxes(obj_bboxes, dataset_name)
+        obj_bboxes = getObjBboxes(cur_img, mm_det_model, dataset_logic_name)
+        obj_bboxes = delCoverBboxes(obj_bboxes, dataset_logic_name)
 
-        fg_bboxes = getFgBboxes(cur_img, img_batch_tensor2numpy(batch), obj_bboxes, dataset_name)
+        fg_bboxes = getFgBboxes(cur_img, img_batch_tensor2numpy(batch), obj_bboxes, dataset_logic_name)
 
         if fg_bboxes.shape[0] > 0 and obj_bboxes.shape[0] > 0:
             cur_bboxes = np.concatenate((obj_bboxes, fg_bboxes), axis=0)
@@ -199,7 +210,7 @@ def obj_bboxes_extraction(dataset_root, dataset_name, mode):
 
         all_bboxes.append(cur_bboxes)
 
-    save_path = os.path.join(dataset_root, dataset_name, f'{dataset_name}_bboxes_{mode}.npy')
+    save_path = os.path.join(dataset_root, dataset_dir_name, f'{dataset_logic_name}_bboxes_{mode}.npy')
     np.save(save_path, np.array(all_bboxes, dtype=object))
     print(f'bboxes saved to {save_path}!')
 

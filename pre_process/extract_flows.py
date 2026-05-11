@@ -6,7 +6,7 @@ import os
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from datasets.dataset import get_dataset
+from datasets.dataset import get_dataset, normalize_dataset_name, resolve_dataset_dir_name
 from pre_process.flownet_networks.flownet2_models import FlowNet2
 
 FLOWNET_INPUT_WIDTH = {"ped2": 512 * 2, "avenue": 512 * 2, "shanghaitech": 1024}
@@ -14,6 +14,7 @@ FLOWNET_INPUT_HEIGHT = {"ped2": 384 * 2, "avenue": 384 * 2, "shanghaitech": 640}
 
 
 def extracting_flows(dataset, dataset_name, of_save_dir):
+    dataset_name = normalize_dataset_name(dataset_name)
     WIDTH, HEIGHT = FLOWNET_INPUT_WIDTH[dataset_name], FLOWNET_INPUT_HEIGHT[dataset_name]
 
     flownet2 = FlowNet2()
@@ -65,12 +66,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    dataset = get_dataset(dataset_name=args.dataset_name, dir=os.path.join(args.proj_root, "data", args.dataset_name),
+    dataset_root = os.path.join(args.proj_root, "data")
+    dataset_logic_name = normalize_dataset_name(args.dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, args.dataset_name)
+
+    dataset = get_dataset(dataset_name=dataset_logic_name, dir=os.path.join(dataset_root, dataset_dir_name),
                           context_frame_num=1, mode=args.mode)
     if args.mode == "train":
-        of_save_dir = os.path.join(args.proj_root, "data", args.dataset_name, "training", "flows")
+        of_save_dir = os.path.join(dataset_root, dataset_dir_name, "training", "flows")
     else:
-        of_save_dir = os.path.join(args.proj_root, "data", args.dataset_name, "testing", "flows")
+        of_save_dir = os.path.join(dataset_root, dataset_dir_name, "testing", "flows")
 
     with torch.no_grad():
-        extracting_flows(dataset, dataset_name=args.dataset_name, of_save_dir=of_save_dir)
+        extracting_flows(dataset, dataset_name=dataset_logic_name, of_save_dir=of_save_dir)

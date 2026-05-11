@@ -22,6 +22,7 @@ from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 
+from datasets.dataset import normalize_dataset_name, resolve_dataset_dir_name
 from utils.eval_utils import save_evaluation_curves
 
 
@@ -55,6 +56,7 @@ DEFAULTS = {
     "kfold": 5,
     "early_stop_patience": 5,
     "early_stop_min_delta": 0.0,
+    "disc_score_sweep": "0,0.01,0.025,0.05,0.1,0.2,0.5,1.0",
 }
 
 
@@ -63,7 +65,11 @@ def parse_args():
         description="TransGANomaly-inspired 3DResNet-HF2VAD for video anomaly detection"
     )
     parser.add_argument("--mode", choices=["train", "test"], required=True)
-    parser.add_argument("--dataset_name", choices=["ped2", "avenue", "shanghaitech"], default="ped2")
+    parser.add_argument(
+        "--dataset_name",
+        choices=["ped2", "UCSDped2", "ucsdped2", "uscdped2", "avenue", "shanghaitech"],
+        default="ped2",
+    )
     parser.add_argument("--dataset_base_dir", default="./data")
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--epochs", type=int, default=DEFAULTS["epochs"])
@@ -124,6 +130,11 @@ def parse_args():
         default=DEFAULTS["disc_score_weight"],
         help="Optional discriminator realism error weight in anomaly score. Default 0 uses generator only.",
     )
+    parser.add_argument(
+        "--disc_score_sweep",
+        default=DEFAULTS["disc_score_sweep"],
+        help="Comma-separated D score weights evaluated at test time without extra model forwards.",
+    )
     return parser.parse_args()
 
 
@@ -134,6 +145,29 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
+
+
+def parse_float_list(text: str) -> List[float]:
+    values = []
+    for item in str(text).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        values.append(float(item))
+    return values
+
+
+def unique_sorted_floats(values: List[float]) -> List[float]:
+    return sorted({round(float(value), 10) for value in values})
+
+
+def format_float_key(value: float) -> str:
+    text = f"{float(value):g}"
+    return text.replace("-", "m").replace(".", "p")
+
+
+def disc_sweep_values(args) -> List[float]:
+    return unique_sorted_floats(parse_float_list(args.disc_score_sweep) + [args.disc_score_weight])
 
 
 def utc_now_iso():
@@ -530,7 +564,7 @@ def compute_sample_errors(generator, discriminator, observed_app, motion, target
 
 
 @torch.no_grad()
-def collect_train_score_stats(generator, discriminator, loader, device, keep_scores=False, use_discriminator=False):
+def collect_train_score_stats(generator, discriminator, loader, device, keep_scores=False, use_discriminator=True):
     generator.eval()
     discriminator.eval()
     motion_errs = []
@@ -571,7 +605,7 @@ def collect_train_score_stats(generator, discriminator, loader, device, keep_sco
     return stats
 
 
-def save_training_stats(generator, discriminator, loader, device, path: Path, use_discriminator=False):
+def save_training_stats(generator, discriminator, loader, device, path: Path, use_discriminator=True):
     stats = collect_train_score_stats(
         generator,
         discriminator,
@@ -590,6 +624,7 @@ def save_training_stats(generator, discriminator, loader, device, path: Path, us
         "frame_std": stats["frame_std"],
         "disc_mean": stats["disc_mean"],
         "disc_std": stats["disc_std"],
+        "disc_stats_available": bool(len(stats["disc_training_stats"]) > 0),
         "saved_at_utc": utc_now_iso(),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -617,6 +652,16 @@ def load_training_stats(path: Path):
         "disc_mean": float(stats.get("disc_mean", 0.0)),
         "disc_std": float(stats.get("disc_std", 1.0)),
     }
+
+
+def training_stats_have_discriminator(path: Path) -> bool:
+    if not path.exists():
+        return False
+    stats = torch.load(path, map_location="cpu", weights_only=False)
+    if bool(stats.get("disc_stats_available", False)):
+        return True
+    disc_scores = np.asarray(stats.get("disc_training_stats", []), dtype=np.float32)
+    return len(disc_scores) > 0
 
 
 def _gt_sort_key(k):
@@ -649,12 +694,25 @@ def load_pickle_compat(path: Path):
             return NumpyCompatUnpickler(f).load()
 
 
-def load_gt_labels(dataset_base_dir: Path, dataset_name: str):
-    gt_dir = dataset_base_dir / dataset_name / "ground_truth_demo"
-    candidates = ["gt_label_12fps.json", "gt_label.json"] if dataset_name == "shanghaitech" else ["gt_label.json"]
-    gt_path = next((gt_dir / name for name in candidates if (gt_dir / name).exists()), None)
+def load_gt_labels(dataset_base_dir: Path, dataset_name: str, dataset_dir_name: Optional[str] = None):
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = dataset_dir_name or resolve_dataset_dir_name(dataset_base_dir, dataset_name)
+    candidates = (
+        ["gt_label_12fps.json", "gt_label.json"]
+        if dataset_logic_name == "shanghaitech"
+        else ["gt_label.json"]
+    )
+    gt_dirs = [dataset_base_dir / dataset_dir_name / "ground_truth_demo"]
+    fallback_gt_dir = dataset_base_dir / dataset_logic_name / "ground_truth_demo"
+    if fallback_gt_dir not in gt_dirs:
+        gt_dirs.append(fallback_gt_dir)
+
+    gt_path = next(
+        (gt_dir / name for gt_dir in gt_dirs for name in candidates if (gt_dir / name).exists()),
+        None,
+    )
     if gt_path is None:
-        raise FileNotFoundError(f"No ground-truth file found in {gt_dir}")
+        raise FileNotFoundError(f"No ground-truth file found in {', '.join(str(path) for path in gt_dirs)}")
 
     gt = load_pickle_compat(gt_path)
     gt_items = _sorted_gt_items(gt)
@@ -790,6 +848,207 @@ def evaluate_frame_auc(
     }
 
     return {"auc": auc, "raw_auc": raw_auc, "frame_scores": frame_scores, "timing": timing}
+
+
+def trim_frame_scores(frame_scores: np.ndarray, gt_concat, testing_frame_counts):
+    trimmed_gt = []
+    trimmed_scores = []
+    start = 0
+    for video_len in testing_frame_counts:
+        trimmed_gt.append(gt_concat[start:start + video_len][4:])
+        trimmed_scores.append(frame_scores[start:start + video_len][4:])
+        start += video_len
+    return np.concatenate(trimmed_scores, axis=0), np.concatenate(trimmed_gt, axis=0)
+
+
+def score_frame_auc(frame_scores: np.ndarray, gt_concat, testing_frame_counts):
+    scores_eval, gt_eval = trim_frame_scores(frame_scores, gt_concat, testing_frame_counts)
+    smoothed_scores = smooth_scores_by_video(frame_scores, testing_frame_counts, trim=4)
+    return {
+        "auc": float(roc_auc_score(gt_eval, smoothed_scores)),
+        "raw_auc": float(roc_auc_score(gt_eval, scores_eval)),
+    }
+
+
+def score_variant_name(motion_w: float, frame_w: float, disc_w: float) -> str:
+    if motion_w == 1.0 and frame_w == 0.0 and disc_w == 0.0:
+        return "motion"
+    if motion_w == 0.0 and frame_w == 1.0 and disc_w == 0.0:
+        return "frame"
+    if motion_w == 0.0 and frame_w == 0.0 and disc_w == 1.0:
+        return "disc"
+    if disc_w == 0.0:
+        return "motion_frame"
+    return f"motion_frame_disc_{format_float_key(disc_w)}"
+
+
+def build_score_variants(args):
+    variants = [
+        (score_variant_name(1.0, 0.0, 0.0), 1.0, 0.0, 0.0),
+        (score_variant_name(0.0, 1.0, 0.0), 0.0, 1.0, 0.0),
+        (score_variant_name(0.0, 0.0, 1.0), 0.0, 0.0, 1.0),
+        (score_variant_name(args.motion_score_weight, args.frame_score_weight, 0.0), args.motion_score_weight, args.frame_score_weight, 0.0),
+    ]
+    for disc_w in disc_sweep_values(args):
+        variants.append(
+            (
+                score_variant_name(args.motion_score_weight, args.frame_score_weight, disc_w),
+                args.motion_score_weight,
+                args.frame_score_weight,
+                disc_w,
+            )
+        )
+
+    deduped = []
+    seen = set()
+    for item in variants:
+        if item[0] in seen:
+            continue
+        seen.add(item[0])
+        deduped.append(item)
+    return deduped
+
+
+def components_to_frame_scores(frame_bbox_components, total_frames, weights, empty_components):
+    motion_w, frame_w, disc_w = weights
+    frame_scores = np.empty(total_frames, dtype=np.float32)
+    empty_score = motion_w * empty_components[0] + frame_w * empty_components[1] + disc_w * empty_components[2]
+    for frame_id, item in enumerate(frame_bbox_components):
+        if not item:
+            frame_scores[frame_id] = empty_score
+            continue
+        frame_scores[frame_id] = max(
+            motion_w * comp[0] + frame_w * comp[1] + disc_w * comp[2]
+            for comp in item.values()
+        )
+    return frame_scores
+
+
+@torch.no_grad()
+def evaluate_score_breakdown(
+    generator,
+    discriminator,
+    loader,
+    gt_concat,
+    testing_frame_counts,
+    device,
+    args,
+    train_stats,
+    save_dir=None,
+    suffix="test",
+):
+    eval_started_at = utc_now_iso()
+    eval_start = time.perf_counter()
+    forward_time_sec = 0.0
+    num_batches = 0
+    num_samples = 0
+    generator.eval()
+    discriminator.eval()
+    total_frames = int(np.sum(testing_frame_counts))
+    frame_bbox_components = [dict() for _ in range(total_frames)]
+
+    motion_mean = train_stats["motion_mean"] if train_stats else 0.0
+    motion_std = train_stats["motion_std"] if train_stats else 1.0
+    frame_mean = train_stats["frame_mean"] if train_stats else 0.0
+    frame_std = train_stats["frame_std"] if train_stats else 1.0
+    disc_mean = train_stats["disc_mean"] if train_stats else 0.0
+    disc_std = train_stats["disc_std"] if train_stats else 1.0
+
+    obj_idx = 0
+    for observed_app, motion, target_app, _, pred_frame in tqdm(loader, desc="Eval breakdown", leave=False):
+        batch_size = int(observed_app.shape[0])
+        observed_app = observed_app.permute(0, 2, 1, 3, 4).to(device, non_blocking=True)
+        motion = motion.permute(0, 2, 1, 3, 4).to(device, non_blocking=True)
+        target_app = target_app.to(device, non_blocking=True)
+
+        sync_if_cuda(device)
+        forward_start = time.perf_counter()
+        motion_err, frame_err, disc_err = compute_sample_errors(
+            generator,
+            discriminator,
+            observed_app,
+            motion,
+            target_app,
+            use_discriminator=True,
+        )
+        sync_if_cuda(device)
+        forward_time_sec += time.perf_counter() - forward_start
+        num_batches += 1
+        num_samples += batch_size
+
+        motion_z = ((motion_err.cpu().numpy() - motion_mean) / max(motion_std, 1e-8)).astype(np.float32)
+        frame_z = ((frame_err.cpu().numpy() - frame_mean) / max(frame_std, 1e-8)).astype(np.float32)
+        disc_z = ((disc_err.cpu().numpy() - disc_mean) / max(disc_std, 1e-8)).astype(np.float32)
+        pred_frame = pred_frame.cpu().numpy()
+
+        for i in range(batch_size):
+            frame_id = int(pred_frame[i])
+            if 0 <= frame_id < total_frames:
+                frame_bbox_components[frame_id][obj_idx] = (
+                    float(motion_z[i]),
+                    float(frame_z[i]),
+                    float(disc_z[i]),
+                )
+            obj_idx += 1
+
+    empty_components = (
+        (0.0 - motion_mean) / max(motion_std, 1e-8),
+        (0.0 - frame_mean) / max(frame_std, 1e-8),
+        (0.0 - disc_mean) / max(disc_std, 1e-8),
+    )
+    variants = build_score_variants(args)
+    frame_scores_by_variant = {}
+    breakdown = {}
+    for name, motion_w, frame_w, disc_w in variants:
+        frame_scores = components_to_frame_scores(
+            frame_bbox_components,
+            total_frames,
+            (motion_w, frame_w, disc_w),
+            empty_components,
+        )
+        metrics = score_frame_auc(frame_scores, gt_concat, testing_frame_counts)
+        metrics["weights"] = {"motion": motion_w, "frame": frame_w, "disc": disc_w}
+        breakdown[name] = metrics
+        frame_scores_by_variant[name] = frame_scores
+
+    selected_name = score_variant_name(args.motion_score_weight, args.frame_score_weight, args.disc_score_weight)
+    if selected_name not in breakdown:
+        selected_name = score_variant_name(args.motion_score_weight, args.frame_score_weight, 0.0)
+
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        joblib.dump(frame_scores_by_variant, save_dir / f"frame_scores_{suffix}_breakdown.pkl")
+        joblib.dump(frame_scores_by_variant[selected_name], save_dir / f"frame_scores_{suffix}.pkl")
+        scores_eval, gt_eval = trim_frame_scores(frame_scores_by_variant[selected_name], gt_concat, testing_frame_counts)
+        curves_dir = save_dir / f"anomaly_curves_{suffix}"
+        curve_auc = float(save_evaluation_curves(scores_eval, gt_eval, str(curves_dir), np.asarray(testing_frame_counts) - 4))
+        breakdown[selected_name]["curve_auc"] = curve_auc
+        with open(save_dir / f"score_breakdown_{suffix}.json", "w", encoding="utf-8") as f:
+            json.dump(breakdown, f, indent=2)
+
+    eval_duration_sec = time.perf_counter() - eval_start
+    timing = {
+        "started_at_utc": eval_started_at,
+        "ended_at_utc": utc_now_iso(),
+        "duration_sec": eval_duration_sec,
+        "model_forward_sec": forward_time_sec,
+        "num_batches": num_batches,
+        "num_samples": num_samples,
+        "samples_per_sec": num_samples / eval_duration_sec if eval_duration_sec > 0 else None,
+        "model_forward_samples_per_sec": num_samples / forward_time_sec if forward_time_sec > 0 else None,
+    }
+
+    selected_auc = breakdown[selected_name].get("curve_auc", breakdown[selected_name]["auc"])
+    return {
+        "auc": selected_auc,
+        "raw_auc": breakdown[selected_name]["raw_auc"],
+        "selected_variant": selected_name,
+        "breakdown": breakdown,
+        "frame_scores": frame_scores_by_variant[selected_name],
+        "frame_scores_by_variant": frame_scores_by_variant,
+        "timing": timing,
+    }
 
 
 @torch.no_grad()
@@ -1203,7 +1462,7 @@ def run_train(args, device, use_amp, train_dataset, test_dataset, gt_concat, tes
                     discriminator,
                     train_stats_loader,
                     device,
-                    use_discriminator=args.disc_score_weight > 0,
+                    use_discriminator=True,
                 )
                 audit_metrics = evaluate_frame_auc(
                     generator,
@@ -1267,7 +1526,7 @@ def run_train(args, device, use_amp, train_dataset, test_dataset, gt_concat, tes
                 train_stats_loader,
                 device,
                 stats_path,
-                use_discriminator=args.disc_score_weight > 0,
+                use_discriminator=True,
             )
             result["training_stats"] = str(stats_path)
             result["training_stats_summary"] = {
@@ -1321,6 +1580,7 @@ def run_test(args, device, train_dataset, test_dataset, gt_concat, testing_frame
             "timestamp_utc": test_started_at,
             "checkpoint": args.checkpoint,
             "disc_score_weight": args.disc_score_weight,
+            "disc_score_sweep": disc_sweep_values(args),
         },
     )
     test_loader = make_loader_from_args(test_dataset, args, False, device)
@@ -1342,7 +1602,7 @@ def run_test(args, device, train_dataset, test_dataset, gt_concat, testing_frame
             stats_path = None
     if stats_path is None:
         stats_path = latest_training_stats_path(save_dir) or training_stats_path(save_dir, 0)
-    if stats_path.exists():
+    if stats_path.exists() and training_stats_have_discriminator(stats_path):
         train_score_stats = load_training_stats(stats_path)
     else:
         stats_dataset = maybe_training_stats_subset(train_dataset, save_dir)
@@ -1353,32 +1613,33 @@ def run_test(args, device, train_dataset, test_dataset, gt_concat, testing_frame
             train_stats_loader,
             device,
             stats_path,
-            use_discriminator=args.disc_score_weight > 0,
+            use_discriminator=True,
         )
-    eval_metrics = evaluate_frame_auc(
+    eval_metrics = evaluate_score_breakdown(
         generator,
         discriminator,
         test_loader,
         gt_concat,
         testing_frame_counts,
         device,
+        args,
+        train_score_stats,
         save_dir=save_dir,
         suffix="test",
-        motion_w=args.motion_score_weight,
-        frame_w=args.frame_score_weight,
-        disc_w=args.disc_score_weight,
-        train_stats=train_score_stats,
     )
     summary = {
         "checkpoint": str(ckpt_path),
         "test_auc": eval_metrics["auc"],
         "raw_test_auc": eval_metrics["raw_auc"],
+        "selected_variant": eval_metrics["selected_variant"],
         "training_stats": str(stats_path),
         "score_weights": {
             "motion": args.motion_score_weight,
             "frame": args.frame_score_weight,
             "disc": args.disc_score_weight,
         },
+        "disc_score_sweep": disc_sweep_values(args),
+        "score_breakdown": eval_metrics["breakdown"],
         "timing": eval_metrics["timing"],
         "total_test_duration_sec": time.perf_counter() - test_start,
         "started_at_utc": test_started_at,
@@ -1533,7 +1794,7 @@ def run_kfold_training(args, device, use_amp, train_dataset, test_dataset, gt_co
                         discriminator,
                         train_stats_loader,
                         device,
-                        use_discriminator=args.disc_score_weight > 0,
+                        use_discriminator=True,
                     )
                     audit_metrics = evaluate_frame_auc(
                         generator,
@@ -1598,7 +1859,7 @@ def run_kfold_training(args, device, use_amp, train_dataset, test_dataset, gt_co
                     train_stats_loader,
                     device,
                     stats_path,
-                    use_discriminator=args.disc_score_weight > 0,
+                    use_discriminator=True,
                 )
                 result["training_stats"] = str(stats_path)
                 result["training_stats_summary"] = {
@@ -1677,13 +1938,15 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
             "fold": args.fold,
             "checkpoint": args.checkpoint,
             "disc_score_weight": args.disc_score_weight,
+            "disc_score_sweep": disc_sweep_values(args),
         },
     )
 
     folds = list(iter_kfold_indices(train_dataset, args.kfold, args.seed, args.split_unit))
     requested_folds = [args.fold] if args.fold is not None else list(range(args.kfold))
     test_loader = make_loader_from_args(test_dataset, args, False, device)
-    frame_scores_list = []
+    frame_scores_by_variant_lists = {}
+    variant_weights = {}
     fold_results = []
 
     for fold_idx, (train_idx, _) in enumerate(folds):
@@ -1712,7 +1975,7 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
                 stats_path = None
         if stats_path is None:
             stats_path = latest_training_stats_path(fold_dir) or training_stats_path(fold_dir, 0)
-        if stats_path.exists():
+        if stats_path.exists() and training_stats_have_discriminator(stats_path):
             train_score_stats = load_training_stats(stats_path)
         else:
             train_subset = Subset(train_dataset, train_idx.tolist())
@@ -1723,67 +1986,77 @@ def run_kfold_test(args, device, train_dataset, test_dataset, gt_concat, testing
                 train_stats_loader,
                 device,
                 stats_path,
-                use_discriminator=args.disc_score_weight > 0,
+                use_discriminator=True,
             )
-        eval_metrics = evaluate_frame_auc(
+        eval_metrics = evaluate_score_breakdown(
             generator,
             discriminator,
             test_loader,
             gt_concat,
             testing_frame_counts,
             device,
+            args,
+            train_score_stats,
             save_dir=fold_dir,
             suffix="test",
-            motion_w=args.motion_score_weight,
-            frame_w=args.frame_score_weight,
-            disc_w=args.disc_score_weight,
-            train_stats=train_score_stats,
         )
-        frame_scores_list.append(eval_metrics["frame_scores"])
+        for variant_name, frame_scores in eval_metrics["frame_scores_by_variant"].items():
+            frame_scores_by_variant_lists.setdefault(variant_name, []).append(frame_scores)
+            variant_weights[variant_name] = eval_metrics["breakdown"][variant_name]["weights"]
         fold_results.append(
             {
                 "fold": fold_idx,
                 "checkpoint": str(ckpt_path),
                 "test_auc": eval_metrics["auc"],
                 "raw_test_auc": eval_metrics["raw_auc"],
+                "selected_variant": eval_metrics["selected_variant"],
+                "score_breakdown": eval_metrics["breakdown"],
                 "training_stats": str(stats_path),
                 "timing": eval_metrics["timing"],
             }
         )
         print(json.dumps(fold_results[-1], ensure_ascii=True))
 
-    if not frame_scores_list:
+    if not frame_scores_by_variant_lists:
         raise ValueError("No fold checkpoint evaluated. Check --fold and checkpoint paths.")
 
-    ensemble_scores = np.mean(np.stack(frame_scores_list, axis=0), axis=0)
-    trimmed_gt = []
-    trimmed_scores = []
-    start = 0
-    for video_len in testing_frame_counts:
-        trimmed_gt.append(gt_concat[start:start + video_len][4:])
-        trimmed_scores.append(ensemble_scores[start:start + video_len][4:])
-        start += video_len
-    gt_eval = np.concatenate(trimmed_gt, axis=0)
-    scores_eval = np.concatenate(trimmed_scores, axis=0)
-    smoothed_scores = smooth_scores_by_video(ensemble_scores, testing_frame_counts, trim=4)
+    ensemble_scores_by_variant = {}
+    ensemble_breakdown = {}
+    for variant_name, scores_list in frame_scores_by_variant_lists.items():
+        ensemble_scores = np.mean(np.stack(scores_list, axis=0), axis=0)
+        ensemble_scores_by_variant[variant_name] = ensemble_scores
+        metrics = score_frame_auc(ensemble_scores, gt_concat, testing_frame_counts)
+        metrics["weights"] = variant_weights[variant_name]
+        ensemble_breakdown[variant_name] = metrics
 
+    selected_variant = score_variant_name(args.motion_score_weight, args.frame_score_weight, args.disc_score_weight)
+    if selected_variant not in ensemble_scores_by_variant:
+        selected_variant = score_variant_name(args.motion_score_weight, args.frame_score_weight, 0.0)
+    ensemble_scores = ensemble_scores_by_variant[selected_variant]
+    scores_eval, gt_eval = trim_frame_scores(ensemble_scores, gt_concat, testing_frame_counts)
+
+    joblib.dump(ensemble_scores_by_variant, save_dir / "frame_scores_test_ensemble_breakdown.pkl")
     joblib.dump(ensemble_scores, save_dir / "frame_scores_test_ensemble.pkl")
     curves_dir = save_dir / "anomaly_curves_test_ensemble"
     ensemble_auc = float(save_evaluation_curves(scores_eval, gt_eval, str(curves_dir), np.asarray(testing_frame_counts) - 4))
-    raw_ensemble_auc = float(roc_auc_score(gt_eval, scores_eval))
-    smoothed_ensemble_auc = float(roc_auc_score(gt_eval, smoothed_scores))
+    ensemble_breakdown[selected_variant]["curve_auc"] = ensemble_auc
+    with open(save_dir / "score_breakdown_test_ensemble.json", "w", encoding="utf-8") as f:
+        json.dump(ensemble_breakdown, f, indent=2)
 
     summary = {
         "kfold": args.kfold,
         "executed_folds": [item["fold"] for item in fold_results],
         "ensemble_test_auc": ensemble_auc,
-        "raw_ensemble_test_auc": raw_ensemble_auc,
-        "smoothed_ensemble_test_auc": smoothed_ensemble_auc,
+        "raw_ensemble_test_auc": ensemble_breakdown[selected_variant]["raw_auc"],
+        "smoothed_ensemble_test_auc": ensemble_breakdown[selected_variant]["auc"],
+        "selected_variant": selected_variant,
         "score_weights": {
             "motion": args.motion_score_weight,
             "frame": args.frame_score_weight,
             "disc": args.disc_score_weight,
         },
+        "disc_score_sweep": disc_sweep_values(args),
+        "score_breakdown": ensemble_breakdown,
         "fold_results": fold_results,
         "total_test_duration_sec": time.perf_counter() - test_start,
         "started_at_utc": test_started_at,
@@ -1800,10 +2073,13 @@ def main():
     set_seed(args.seed)
 
     dataset_base_dir = Path(args.dataset_base_dir)
-    train_dir = dataset_base_dir / args.dataset_name / "training" / "chunked_samples"
-    test_dir = dataset_base_dir / args.dataset_name / "testing" / "chunked_samples"
+    dataset_logic_name = normalize_dataset_name(args.dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_base_dir, args.dataset_name)
+    train_dir = dataset_base_dir / dataset_dir_name / "training" / "chunked_samples"
+    test_dir = dataset_base_dir / dataset_dir_name / "testing" / "chunked_samples"
     save_dir = build_save_dir(args)
     save_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[DATASET] requested={args.dataset_name} dir={dataset_dir_name} logic={dataset_logic_name}")
 
     device = torch.device(args.device if torch.cuda.is_available() or str(args.device) == "cpu" else "cpu")
     use_amp = DEFAULTS["use_amp"] and device.type == "cuda"
@@ -1814,7 +2090,11 @@ def main():
     testing_frame_counts = None
     if args.mode == "test" or args.eval_test_during_train:
         test_dataset = ChunkedSamplesDataset(test_dir, max_cache_chunks=args.max_cache_chunks)
-        gt_concat, testing_frame_counts, gt_path = load_gt_labels(dataset_base_dir, args.dataset_name)
+        gt_concat, testing_frame_counts, gt_path = load_gt_labels(
+            dataset_base_dir,
+            dataset_logic_name,
+            dataset_dir_name,
+        )
         print(f"[GT] {gt_path} | frames={int(np.sum(testing_frame_counts))} | videos={len(testing_frame_counts)}")
 
     if args.kfold < 1:

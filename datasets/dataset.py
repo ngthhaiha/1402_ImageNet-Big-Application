@@ -11,6 +11,40 @@ import torchvision.transforms as transforms
 import joblib
 
 
+DATASET_NAME_ALIASES = {
+    "ped2": "ped2",
+    "ucsdped2": "ped2",
+    "uscdped2": "ped2",
+    "avenue": "avenue",
+    "shanghaitech": "shanghaitech",
+}
+
+
+def normalize_dataset_name(dataset_name):
+    key = str(dataset_name).strip()
+    return DATASET_NAME_ALIASES.get(key.lower(), key.lower())
+
+
+def resolve_dataset_dir_name(dataset_root, dataset_name):
+    raw_name = str(dataset_name).strip()
+    logic_name = normalize_dataset_name(raw_name)
+    candidates = []
+
+    def add_candidate(name):
+        if name and name not in candidates:
+            candidates.append(name)
+
+    add_candidate(raw_name)
+    if raw_name.lower() in {"ucsdped2", "uscdped2"}:
+        add_candidate("UCSDped2")
+    add_candidate(logic_name)
+
+    for candidate in candidates:
+        if os.path.isdir(os.path.join(dataset_root, candidate)):
+            return candidate
+    return candidates[0]
+
+
 def get_inputs(file_addr):
     file_format = file_addr.split('.')[-1]
     if file_format == 'mat':
@@ -669,6 +703,7 @@ class shanghaiTech_dataset(Dataset):
 
 def get_dataset(dataset_name, dir, mode='train', context_frame_num=0, border_mode='hard',
                 all_bboxes=None, patch_size=32, of_dataset=False):
+    dataset_name = normalize_dataset_name(dataset_name)
     if not of_dataset:
         img_ext = {"ped2": ".tif", "avenue": ".jpg", "shanghaitech": ".jpg"}[dataset_name]
     else:
@@ -687,7 +722,7 @@ def get_dataset(dataset_name, dir, mode='train', context_frame_num=0, border_mod
                                        all_bboxes=all_bboxes, patch_size=patch_size, file_format=img_ext,
                                        of_dataset=of_dataset)
     else:
-        raise NotImplementedError
+        raise NotImplementedError("dataset name should be one of ped2, UCSDped2, avenue or shanghaitech!")
 
     return dataset
 

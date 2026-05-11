@@ -2,25 +2,32 @@ import argparse
 import os
 import numpy as np
 import joblib
-from datasets.dataset import get_dataset, img_batch_tensor2numpy
+from datasets.dataset import (
+    get_dataset,
+    img_batch_tensor2numpy,
+    normalize_dataset_name,
+    resolve_dataset_dir_name,
+)
 
 
 def samples_extraction(dataset_root, dataset_name, mode, all_bboxes, save_dir):
     num_predicted_frame = 1
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, dataset_name)
     # save samples in chunked file
-    if dataset_name == "ped2":
+    if dataset_logic_name == "ped2":
         num_samples_each_chunk = 100000
-    elif dataset_name == "avenue":
+    elif dataset_logic_name == "avenue":
         num_samples_each_chunk = 200000 if mode == "test" else 20000
-    elif dataset_name == "shanghaitech":
+    elif dataset_logic_name == "shanghaitech":
         num_samples_each_chunk = 300000 if mode == "test" else 100000
     else:
-        raise NotImplementedError("dataset name should be one of ped2,avenue or shanghaitech!")
+        raise NotImplementedError("dataset name should be one of ped2, UCSDped2, avenue or shanghaitech!")
 
     # frames dataset
     dataset = get_dataset(
-        dataset_name=dataset_name,
-        dir=os.path.join(dataset_root, dataset_name),
+        dataset_name=dataset_logic_name,
+        dir=os.path.join(dataset_root, dataset_dir_name),
         context_frame_num=4, mode=mode,
         border_mode="predict", all_bboxes=all_bboxes,
         patch_size=32, of_dataset=False
@@ -28,8 +35,8 @@ def samples_extraction(dataset_root, dataset_name, mode, all_bboxes, save_dir):
 
     # flows dataset
     flow_dataset = get_dataset(
-        dataset_name=dataset_name,
-        dir=os.path.join(dataset_root, dataset_name),
+        dataset_name=dataset_logic_name,
+        dir=os.path.join(dataset_root, dataset_dir_name),
         context_frame_num=4, mode=mode,
         border_mode="predict", all_bboxes=all_bboxes,
         patch_size=32,
@@ -104,17 +111,20 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    dataset_root = os.path.join(args.proj_root, "data")
+    dataset_logic_name = normalize_dataset_name(args.dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, args.dataset_name)
     all_bboxes = np.load(
-        os.path.join(args.proj_root, "data", args.dataset_name, '%s_bboxes_%s.npy' % (args.dataset_name, args.mode)),
+        os.path.join(dataset_root, dataset_dir_name, '%s_bboxes_%s.npy' % (dataset_logic_name, args.mode)),
         allow_pickle=True
     )
     if args.mode == "train":
-        save_dir = os.path.join(args.proj_root, "data", args.dataset_name, "training", "chunked_samples")
+        save_dir = os.path.join(dataset_root, dataset_dir_name, "training", "chunked_samples")
     else:
-        save_dir = os.path.join(args.proj_root, "data", args.dataset_name, "testing", "chunked_samples")
+        save_dir = os.path.join(dataset_root, dataset_dir_name, "testing", "chunked_samples")
 
     samples_extraction(
-        dataset_root=os.path.join(args.proj_root, "data"),
+        dataset_root=dataset_root,
         dataset_name=args.dataset_name,
         mode=args.mode,
         all_bboxes=all_bboxes,

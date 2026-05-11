@@ -14,7 +14,12 @@ from eval import evaluate
 from tqdm import tqdm
 
 from losses.loss import Gradient_Loss, Intensity_Loss, aggregate_kl_loss
-from datasets.dataset import Chunked_sample_dataset, img_batch_tensor2numpy
+from datasets.dataset import (
+    Chunked_sample_dataset,
+    img_batch_tensor2numpy,
+    normalize_dataset_name,
+    resolve_dataset_dir_name,
+)
 from models.mem_cvae import HFVAD
 
 from utils.initialization_utils import weights_init_kaiming
@@ -277,11 +282,13 @@ if __name__ == '__main__':
     config["cfg_file"] = args.cfg_file
     dataset_name = config["dataset_name"]
     dataset_base_dir = config["dataset_base_dir"]
-    training_chunked_samples_dir = os.path.join(dataset_base_dir, dataset_name, "training/chunked_samples")
-    if dataset_name == "shanghaitech":
-        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_name, "testing/chunked_samples")
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = config.get("dataset_dir_name") or resolve_dataset_dir_name(dataset_base_dir, dataset_name)
+    training_chunked_samples_dir = os.path.join(dataset_base_dir, dataset_dir_name, "training/chunked_samples")
+    if dataset_logic_name == "shanghaitech":
+        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_dir_name, "testing/chunked_samples")
     else:
-        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_name,
+        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_dir_name,
                                                     "testing/chunked_samples/chunked_samples_00.pkl")
 
     train(config, training_chunked_samples_dir, testing_chunked_samples_file)

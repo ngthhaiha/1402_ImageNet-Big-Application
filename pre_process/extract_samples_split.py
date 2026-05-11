@@ -2,7 +2,12 @@ import argparse
 import os
 import numpy as np
 import joblib
-from datasets.dataset import get_dataset, img_batch_tensor2numpy
+from datasets.dataset import (
+    get_dataset,
+    img_batch_tensor2numpy,
+    normalize_dataset_name,
+    resolve_dataset_dir_name,
+)
 
 SPLIT_TO_DIR = {
     "train": "training",
@@ -12,6 +17,7 @@ SPLIT_TO_DIR = {
 
 
 def get_default_chunk_size(dataset_name, mode):
+    dataset_name = normalize_dataset_name(dataset_name)
     if dataset_name == "ped2":
         return 100000
     elif dataset_name == "avenue":
@@ -19,7 +25,7 @@ def get_default_chunk_size(dataset_name, mode):
     elif dataset_name == "shanghaitech":
         return 300000 if mode == "test" else 50000
     else:
-        raise NotImplementedError("dataset name should be one of ped2, avenue or shanghaitech!")
+        raise NotImplementedError("dataset name should be one of ped2, UCSDped2, avenue or shanghaitech!")
 
 
 def dump_chunk(chunked_samples, save_dir, chunk_id):
@@ -46,14 +52,16 @@ def samples_extraction(
     num_samples_each_chunk=None
 ):
     num_predicted_frame = 1
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, dataset_name)
 
     if num_samples_each_chunk is None:
-        num_samples_each_chunk = get_default_chunk_size(dataset_name, mode)
+        num_samples_each_chunk = get_default_chunk_size(dataset_logic_name, mode)
 
     # frames dataset
     dataset = get_dataset(
-        dataset_name=dataset_name,
-        dir=os.path.join(dataset_root, dataset_name),
+        dataset_name=dataset_logic_name,
+        dir=os.path.join(dataset_root, dataset_dir_name),
         context_frame_num=4,
         mode=mode,
         border_mode="predict",
@@ -64,8 +72,8 @@ def samples_extraction(
 
     # flows dataset
     flow_dataset = get_dataset(
-        dataset_name=dataset_name,
-        dir=os.path.join(dataset_root, dataset_name),
+        dataset_name=dataset_logic_name,
+        dir=os.path.join(dataset_root, dataset_dir_name),
         context_frame_num=4,
         mode=mode,
         border_mode="predict",
@@ -168,26 +176,27 @@ if __name__ == '__main__':
     if args.mode not in SPLIT_TO_DIR:
         raise ValueError("mode must be one of: train, val, test")
 
+    dataset_root = os.path.join(args.proj_root, "data")
+    dataset_logic_name = normalize_dataset_name(args.dataset_name)
+    dataset_dir_name = resolve_dataset_dir_name(dataset_root, args.dataset_name)
     all_bboxes = np.load(
         os.path.join(
-            args.proj_root,
-            "data",
-            args.dataset_name,
-            f"{args.dataset_name}_bboxes_{args.mode}.npy"
+            dataset_root,
+            dataset_dir_name,
+            f"{dataset_logic_name}_bboxes_{args.mode}.npy"
         ),
         allow_pickle=True
     )
 
     save_dir = os.path.join(
-        args.proj_root,
-        "data",
-        args.dataset_name,
+        dataset_root,
+        dataset_dir_name,
         SPLIT_TO_DIR[args.mode],
         "chunked_samples"
     )
 
     samples_extraction(
-        dataset_root=os.path.join(args.proj_root, "data"),
+        dataset_root=dataset_root,
         dataset_name=args.dataset_name,
         mode=args.mode,
         all_bboxes=all_bboxes,

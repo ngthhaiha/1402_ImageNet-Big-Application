@@ -11,7 +11,12 @@ from torch.utils.data import DataLoader, Subset
 from torch import optim
 from tensorboardX import SummaryWriter
 
-from datasets.dataset import img_batch_tensor2numpy, Chunked_sample_dataset
+from datasets.dataset import (
+    img_batch_tensor2numpy,
+    Chunked_sample_dataset,
+    normalize_dataset_name,
+    resolve_dataset_dir_name,
+)
 from models.ml_memAE_sc import ML_MemAE_SC
 from utils.initialization_utils import weights_init_kaiming
 from utils.model_utils import loader, saver, only_model_saver
@@ -170,11 +175,13 @@ if __name__ == '__main__':
 
     dataset_name = config["dataset_name"]
     dataset_base_dir = config["dataset_base_dir"]
-    training_chunked_samples_dir = os.path.join(dataset_base_dir, dataset_name, "training/chunked_samples")
-    if dataset_name == "shanghaitech":
-        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_name, "testing/chunked_samples")
+    dataset_logic_name = normalize_dataset_name(dataset_name)
+    dataset_dir_name = config.get("dataset_dir_name") or resolve_dataset_dir_name(dataset_base_dir, dataset_name)
+    training_chunked_samples_dir = os.path.join(dataset_base_dir, dataset_dir_name, "training/chunked_samples")
+    if dataset_logic_name == "shanghaitech":
+        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_dir_name, "testing/chunked_samples")
     else:
-        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_name,
+        testing_chunked_samples_file = os.path.join(dataset_base_dir, dataset_dir_name,
                                                     "testing/chunked_samples/chunked_samples_00.pkl")
 
     train(config, training_chunked_samples_dir, testing_chunked_samples_file)

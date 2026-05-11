@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import yaml
 from models.mem_cvae import HFVAD
-from datasets.dataset import Chunked_sample_dataset
+from datasets.dataset import Chunked_sample_dataset, normalize_dataset_name, resolve_dataset_dir_name
 from utils.eval_utils import save_evaluation_curves
 
 def compat_load(path):
@@ -62,9 +62,34 @@ def _sorted_gt_items(gt):
 
 
 def _get_testing_frame_counts(dataset_name, gt=None):
+    dataset_name = normalize_dataset_name(dataset_name)
     if isinstance(gt, dict) and len(gt) > 0:
         return [len(np.asarray(labels)) for _, labels in _sorted_gt_items(gt)]
     return METADATA[dataset_name]["testing_frames_cnt"]
+
+
+def _get_dataset_dir_name(config):
+    return config.get("dataset_dir_name") or resolve_dataset_dir_name(
+        config["dataset_base_dir"],
+        config["dataset_name"],
+    )
+
+
+def _get_gt_path(config):
+    dataset_logic_name = normalize_dataset_name(config["dataset_name"])
+    dataset_dir_name = _get_dataset_dir_name(config)
+    gt_file = "gt_label_12fps.json" if dataset_logic_name == "shanghaitech" else "gt_label.json"
+
+    candidates = [
+        os.path.join(config["dataset_base_dir"], dataset_dir_name, "ground_truth_demo", gt_file),
+        os.path.join(config["dataset_base_dir"], dataset_dir_name, "ground_truth_demo", "gt_label.json"),
+        os.path.join(config["dataset_base_dir"], dataset_logic_name, "ground_truth_demo", gt_file),
+        os.path.join(config["dataset_base_dir"], dataset_logic_name, "ground_truth_demo", "gt_label.json"),
+    ]
+    for gt_path in candidates:
+        if os.path.exists(gt_path):
+            return gt_path
+    raise FileNotFoundError("No ground-truth file found. Tried: %s" % ", ".join(candidates))
 
 
 def _list_test_chunk_files(testing_chunked_samples_path):
@@ -83,15 +108,12 @@ def _list_test_chunk_files(testing_chunked_samples_path):
 
 
 def evaluate(config, ckpt_path, testing_chunked_samples_file, training_stats_path, suffix):
-    dataset_name = config["dataset_name"]
+    dataset_name = normalize_dataset_name(config["dataset_name"])
     dataset_base_dir = config["dataset_base_dir"]
     device = config["device"]
     num_workers = config["num_workers"]
 
-    gt_file = "gt_label_12fps.json" if dataset_name == "shanghaitech" else "gt_label.json"
-    gt_path = os.path.join(config["dataset_base_dir"], "%s/ground_truth_demo/%s" % (dataset_name, gt_file))
-    if not os.path.exists(gt_path):
-        gt_path = os.path.join(config["dataset_base_dir"], "%s/ground_truth_demo/gt_label.json" % dataset_name)
+    gt_path = _get_gt_path(config)
     gt = pickle.load(open(gt_path, "rb"))
     testing_frame_counts = _get_testing_frame_counts(dataset_name, gt=gt)
     testset_num_frames = int(np.sum(testing_frame_counts))
@@ -228,16 +250,18 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = yaml.safe_load(open(args.cfg_file))
-    if config["dataset_name"] == "shanghaitech":
-        testing_chunked_samples_file = os.path.join("./data", config["dataset_name"], "testing/chunked_samples")
+    dataset_logic_name = normalize_dataset_name(config["dataset_name"])
+    dataset_dir_name = _get_dataset_dir_name(config)
+    if dataset_logic_name == "shanghaitech":
+        testing_chunked_samples_file = os.path.join("./data", dataset_dir_name, "testing/chunked_samples")
     else:
-        testing_chunked_samples_file = os.path.join("./data", config["dataset_name"],
+        testing_chunked_samples_file = os.path.join("./data", dataset_dir_name,
                                                     "testing/chunked_samples/chunked_samples_00.pkl")
 
     from train import cal_training_stats
 
     os.makedirs(os.path.join("./eval", config["exp_name"]), exist_ok=True)
-    training_chunked_samples_dir = os.path.join("./data", config["dataset_name"], "training/chunked_samples")
+    training_chunked_samples_dir = os.path.join("./data", dataset_dir_name, "training/chunked_samples")
     training_stat_path = os.path.join("./eval", config["exp_name"], "training_stats.npy")
     cal_training_stats(config, args.model_save_path, training_chunked_samples_dir, training_stat_path)
 

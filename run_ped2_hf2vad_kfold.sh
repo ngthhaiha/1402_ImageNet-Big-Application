@@ -23,13 +23,25 @@ FOLD=${FOLD:-all}          # all, or one 0-based fold index
 FORCE=${FORCE:-0}          # set FORCE=1 to reuse/overwrite an existing experiment dir
 SPLIT_ONLY=${SPLIT_ONLY:-0}
 
-DATASET=ped2
-SPLIT_ROOT=${SPLIT_ROOT:-data/${DATASET}/kfold${KFOLD}_seed${SEED}}
-RUN_NAME=${RUN_NAME:-ped2_ML_MemAE_SC_CVAE_kfold${KFOLD}_e${EPOCHS}_seed${SEED}}
+DATASET=${DATASET:-ped2}
+case "${DATASET,,}" in
+  ucsdped2|uscdped2)
+    DATASET_DIR=${DATASET_DIR:-UCSDped2}
+    DATASET_LOGIC=${DATASET_LOGIC:-ped2}
+    ;;
+  *)
+    DATASET_DIR=${DATASET_DIR:-$DATASET}
+    DATASET_LOGIC=${DATASET_LOGIC:-$DATASET}
+    ;;
+esac
+DATASET_TAG=${DATASET_TAG:-$DATASET_DIR}
+SPLIT_ROOT=${SPLIT_ROOT:-data/${DATASET_DIR}/kfold${KFOLD}_seed${SEED}}
+RUN_NAME=${RUN_NAME:-${DATASET_TAG}_ML_MemAE_SC_CVAE_kfold${KFOLD}_e${EPOCHS}_seed${SEED}}
 CFG_ROOT=${CFG_ROOT:-cfgs/generated/${RUN_NAME}}
-TRAIN_SRC=${TRAIN_SRC:-data/${DATASET}/training/chunked_samples/chunked_samples_00.pkl}
-TRAIN_DIR=${TRAIN_DIR:-data/${DATASET}/training/chunked_samples}
-TEST_CHUNK=${TEST_CHUNK:-data/${DATASET}/testing/chunked_samples/chunked_samples_00.pkl}
+TRAIN_SRC=${TRAIN_SRC:-data/${DATASET_DIR}/training/chunked_samples/chunked_samples_00.pkl}
+TRAIN_DIR=${TRAIN_DIR:-data/${DATASET_DIR}/training/chunked_samples}
+TEST_CHUNK=${TEST_CHUNK:-data/${DATASET_DIR}/testing/chunked_samples/chunked_samples_00.pkl}
+ML_MEMAE_SC_PRETRAINED=${ML_MEMAE_SC_PRETRAINED:-./ckpt/ped2_ML_MemAE_SC/best.pth}
 
 if [[ ! -f "$BASE_CFG" ]]; then
   echo "Missing BASE_CFG: $BASE_CFG" >&2
@@ -61,12 +73,15 @@ train_src = Path("$TRAIN_SRC")
 split_root = Path("$SPLIT_ROOT")
 cfg_root = Path("$CFG_ROOT")
 run_name = "$RUN_NAME"
+dataset_dir = "$DATASET_DIR"
+dataset_logic = "$DATASET_LOGIC"
 kfold = int("$KFOLD")
 seed = int("$SEED")
 epochs = int("$EPOCHS")
 device = "$DEVICE"
 batchsize = int("$BATCHSIZE")
 num_workers = int("$NUM_WORKERS")
+ml_memae_sc_pretrained = "$ML_MEMAE_SC_PRETRAINED"
 
 data = joblib.load(train_src, mmap_mode="r")
 n = len(data["sample_id"])
@@ -87,7 +102,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(n))):
     np.save(val_index_path, val_idx.astype(np.int64))
 
     cfg = dict(base_cfg)
-    cfg["dataset_name"] = "ped2"
+    cfg["dataset_name"] = dataset_logic
+    cfg["dataset_dir_name"] = dataset_dir
     cfg["dataset_base_dir"] = "./data"
     cfg["exp_name"] = f"{run_name}/fold_{fold_idx}"
     cfg["num_epochs"] = epochs
@@ -95,7 +111,7 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(n))):
     cfg["batchsize"] = batchsize
     cfg["num_workers"] = num_workers
     cfg["pretrained"] = False
-    cfg["ML_MemAE_SC_pretrained"] = "./ckpt/ped2_ML_MemAE_SC/best.pth"
+    cfg["ML_MemAE_SC_pretrained"] = ml_memae_sc_pretrained
 
     cfg_path = cfg_root / f"fold_{fold_idx}.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
@@ -110,7 +126,8 @@ for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(np.arange(n))):
     })
 
 meta = {
-    "dataset": "ped2",
+    "dataset": dataset_dir,
+    "dataset_logic": dataset_logic,
     "source_chunk": str(train_src),
     "kfold": kfold,
     "seed": seed,
@@ -149,7 +166,7 @@ for fold in $FOLDS; do
     exit 1
   fi
 
-  echo "==== HF2VAD Ped2 fold=$fold/$((KFOLD - 1)) epochs=$EPOCHS run=$RUN_NAME ===="
+  echo "==== HF2VAD ${DATASET_DIR} (${DATASET_LOGIC} logic) fold=$fold/$((KFOLD - 1)) epochs=$EPOCHS run=$RUN_NAME ===="
   "$PY" - <<PY 2>&1 | tee "logs/${RUN_NAME}_fold${fold}.log"
 import torch
 import yaml
