@@ -1,0 +1,7 @@
+# Extra packages needed by TAO when using the existing /venv/hf2vad-3d env.
+# Install with: /venv/hf2vad-3d/bin/pip install -r requirements_tao_ped2.txt
+opencv-python-headless
+faiss-cpu
+ftfy
+regex
+git+https://github.com/openai/CLIP.git
