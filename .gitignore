@@ -60,3 +60,4 @@ logs/
 outputs/
 README.md
 presentationcheckpoints/*.pt
+checkpoints/*.pt
