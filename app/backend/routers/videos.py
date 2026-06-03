@@ -1,9 +1,8 @@
+import cv2
 import json
 import math
 import os
 from pathlib import Path
-import shutil
-import subprocess
 from tempfile import NamedTemporaryFile
 from time import sleep
 from typing import Annotated
@@ -59,59 +58,26 @@ def _get_upload_size(file: UploadFile) -> int:
     return size
 
 
-def _find_ffprobe_executable() -> str:
-    env_path = os.environ.get("FFPROBE_PATH")
-    if env_path and Path(env_path).is_file():
-        return env_path
-
-    path_executable = shutil.which("ffprobe")
-    if path_executable:
-        return path_executable
-
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        winget_packages = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
-        matches = sorted(winget_packages.glob("Gyan.FFmpeg*/**/bin/ffprobe.exe"))
-        if matches:
-            return str(matches[-1])
-
-    return "ffprobe"
-
-
 def _read_video_duration(video_path: Path) -> float:
     try:
-        result = subprocess.run(
-            [
-                _find_ffprobe_executable(),
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "json",
-                str(video_path),
-            ],
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=20,
-        )
-    except FileNotFoundError as exc:
-        raise VideoDurationError(
-            "ffprobe is required to read video duration on the backend"
-        ) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise VideoDurationError("Could not read video duration before timeout") from exc
-
-    if result.returncode != 0:
-        error_message = result.stderr.strip() or "ffprobe could not read video metadata"
-        raise VideoDurationError(error_message)
-
-    try:
-        payload = json.loads(result.stdout)
-        duration = float(payload["format"]["duration"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise VideoDurationError("Video duration metadata is missing or invalid") from exc
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise VideoDurationError("Could not open video file to read duration")
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        
+        if fps <= 0 or frame_count <= 0:
+            raise VideoDurationError("Video metadata (fps/frame count) is missing or invalid")
+            
+        duration = float(frame_count) / float(fps)
+    except VideoDurationError:
+        raise
+    except Exception as exc:
+        raise VideoDurationError(f"Could not read video duration: {exc}")
+    finally:
+        if 'cap' in locals() and cap is not None and cap.isOpened():
+            cap.release()
 
     if not math.isfinite(duration) or duration <= 0:
         raise VideoDurationError("Video duration metadata is missing or invalid")

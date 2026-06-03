@@ -119,7 +119,25 @@ export function VideoDetail() {
           currentSelectedId !== null &&
           detail.segments.some((segment) => segment.id === currentSelectedId)
 
-        return selectedStillExists ? currentSelectedId : detail.segments[0].id
+        if (selectedStillExists) {
+          return currentSelectedId
+        }
+
+        const counts: Record<string, number> = {}
+        detail.segments.forEach((seg) => {
+          counts[seg.predicted_class] = (counts[seg.predicted_class] || 0) + 1
+        })
+
+        const bestSegment = [...detail.segments].sort((a, b) => {
+          const countA = counts[a.predicted_class]
+          const countB = counts[b.predicted_class]
+          if (countA !== countB) {
+            return countB - countA
+          }
+          return b.confidence_score - a.confidence_score
+        })[0]
+
+        return bestSegment.id
       })
       setError(null)
     } catch (loadError) {

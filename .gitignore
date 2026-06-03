@@ -61,3 +61,5 @@ outputs/
 README.md
 presentationcheckpoints/*.pt
 checkpoints/*.pt
+
+app/UCF-Crime

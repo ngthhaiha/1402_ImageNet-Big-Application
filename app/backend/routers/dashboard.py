@@ -212,7 +212,15 @@ def get_dashboard_recent_investigations(
         if not segments:
             continue
 
-        first_segment = segments[0]
+        counts = {}
+        for seg in segments:
+            counts[seg.predicted_class] = counts.get(seg.predicted_class, 0) + 1
+            
+        best_segment = max(
+            segments,
+            key=lambda s: (counts[s.predicted_class], s.confidence_score)
+        )
+        
         investigations.append(
             DashboardInvestigationRead(
                 video_id=video.id,
@@ -220,9 +228,9 @@ def get_dashboard_recent_investigations(
                 file_path=video.file_path,
                 duration=float(video.duration) if video.duration is not None else None,
                 file_size=video.file_size,
-                detected_activity=first_segment.predicted_class,
-                confidence=first_segment.confidence_score,
-                anomaly_score=first_segment.anomaly_score,
+                detected_activity=best_segment.predicted_class,
+                confidence=best_segment.confidence_score,
+                anomaly_score=best_segment.anomaly_score,
                 investigation_status=_get_investigation_status(video.segments),
                 created_at=video.created_at,
             )

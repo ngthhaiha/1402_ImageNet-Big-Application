@@ -3,6 +3,7 @@ from pathlib import Path
 from threading import Lock
 
 from backend.utils import vietnam_now_iso
+from backend.ai_pipeline import run_phase1, run_phase2
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -35,23 +36,7 @@ _worker_lock = Lock()
 _is_running = False
 
 
-def run_phase1(video_path: str) -> list[dict]:
-    """
-    Returns list of segments: [{start_time, end_time, anomaly_score}]
-    REPLACE THIS with actual pipeline import when ready.
-    """
-    return [
-        {"start_time": 10.5, "end_time": 25.0, "anomaly_score": 0.87},
-        {"start_time": 78.2, "end_time": 91.4, "anomaly_score": 0.73},
-    ]
 
-
-def run_phase2(video_path: str, segment: dict) -> dict:
-    """
-    Returns: {predicted_class, confidence_score}
-    REPLACE THIS with actual pipeline import when ready.
-    """
-    return {"predicted_class": "Fighting", "confidence_score": 0.91}
 
 
 def start_worker_loop(db_path: str) -> None:
