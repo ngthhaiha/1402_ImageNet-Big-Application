@@ -20,8 +20,8 @@ except ImportError as e:
     print(f"Warning: Could not import AI models. {e}")
 
 # Constants
-PHASE1_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase1_cv" / "top30_transformer_fold0" / "best_auc.pth")
-PHASE2_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase2_cv_transformer_fold0_noleak" / "topk8_transformer_fold0_convnext_tiny_fold1" / "best.pth")
+PHASE1_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase1_cv" / "top30_transformer_fold2" / "best_auc.pth")
+PHASE2_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase2_cv_transformer_fold2_noleak" / "topk8_transformer_fold2_convnext_tiny_fold2" / "best.pth")
 
 # Alphabetical 13 classes used in Phase 2
 UCF_CRIME_13_CLASSES = [
@@ -103,7 +103,11 @@ def run_phase1(video_path: str) -> list[dict]:
         
     segments = []
     fps_f = float(fps)
-    for i in range(len(bounds)):
+    
+    # Lấy top 8 frames có anomaly_score cao nhất
+    top8_indices = torch.argsort(torch.tensor(segment_scores), descending=True)[:8].tolist()
+    
+    for i in top8_indices:
         s_frame, e_frame = bounds[i]
         start_time = float(s_frame) / fps_f
         end_time = float(e_frame) / fps_f
@@ -179,13 +183,17 @@ def run_phase2(video_path: str, segment: dict) -> dict:
     
     with torch.no_grad():
         logits = _phase2_model(batch)
-        probs = torch.softmax(logits, dim=1).squeeze(0)
+        probs = torch.sigmoid(logits).squeeze(0)
         
     score, class_idx = probs.max(dim=0)
     class_idx = int(class_idx.cpu())
     confidence_score = float(score.cpu())
     
-    predicted_class = UCF_CRIME_13_CLASSES[class_idx]
+    if confidence_score < 0.5:
+        predicted_class = "Normal"
+        confidence_score = 1.0 - confidence_score
+    else:
+        predicted_class = UCF_CRIME_13_CLASSES[class_idx]
     
     return {
         "predicted_class": predicted_class,
