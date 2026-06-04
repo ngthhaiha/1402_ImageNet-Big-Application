@@ -9,8 +9,9 @@ BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_DIR.parent
 PHATLAM_DIR = PROJECT_ROOT / "phatlam" / "phatlam_pipeline_paper_topk"
 
-if str(PHATLAM_DIR) not in sys.path:
-    sys.path.append(str(PHATLAM_DIR))
+if str(PHATLAM_DIR) in sys.path:
+    sys.path.remove(str(PHATLAM_DIR))
+sys.path.insert(0, str(PHATLAM_DIR))
 
 try:
     from phase1.extract_nasnet_gmm_topk_features import gmm_select_global_topk_frames, NASNetMobileFeatureExtractor

@@ -1,12 +1,23 @@
 import sqlite3
+import sys
 from pathlib import Path
 from threading import Lock
 
-from backend.utils import vietnam_now_iso
-from backend.ai_pipeline import run_phase1, run_phase2
-
-
 BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.utils import vietnam_now_iso
+
+try:
+    from ai_pipeline import run_phase1, run_phase2
+except ModuleNotFoundError as exc:
+    if exc.name != "ai_pipeline":
+        raise
+    from backend.ai_pipeline import run_phase1, run_phase2
+
+
 PENDING_JOB_QUERY = """
 SELECT *
 FROM processing_jobs
@@ -75,13 +86,14 @@ def run_pipeline(video_id: str, db_path: str) -> None:
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video['file_path']}")
 
-        phase1_segments = _normalize_phase1_segments(run_phase1(str(video_path)))
+        phase1_segments = run_phase1(str(video_path))
+        db_segments = _normalize_phase1_segments(phase1_segments)
         _update_progress(connection, video_id, "PHASE1_DONE")
 
         classified_segments = []
-        for segment in phase1_segments:
+        for segment, db_segment in zip(phase1_segments, db_segments):
             result = _normalize_phase2_result(run_phase2(str(video_path), segment))
-            classified_segments.append((segment, result))
+            classified_segments.append((db_segment, result))
         _update_progress(connection, video_id, "PHASE2_DONE")
 
         now = vietnam_now_iso()

@@ -35,6 +35,9 @@ backend/venv/
 *.db-wal
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/anomaly.db*
+backend/anomaly.db.*
+backend/anomaly.db-journal*
 
 # Frontend dependencies and build output
 node_modules/
