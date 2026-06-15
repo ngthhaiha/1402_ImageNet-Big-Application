@@ -23,6 +23,8 @@ except ImportError as e:
 # Constants
 PHASE1_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase1_cv" / "top30_transformer_fold2" / "best_auc.pth")
 PHASE2_CKPT = str(PROJECT_ROOT / "UCF-Crime" / "outputs_phase2_cv_transformer_fold2_noleak" / "topk8_transformer_fold2_convnext_tiny_fold2" / "best.pth")
+PHASE1_TOP_SCORE_COUNT = 5
+PHASE1_MEAN_THRESHOLD = 0.5
 
 # Alphabetical 13 classes used in Phase 2
 UCF_CRIME_13_CLASSES = [
@@ -105,10 +107,18 @@ def run_phase1(video_path: str) -> list[dict]:
     segments = []
     fps_f = float(fps)
     
-    # Lấy top 8 frames có anomaly_score cao nhất
-    top8_indices = torch.argsort(torch.tensor(segment_scores), descending=True)[:8].tolist()
+    # Phase 1 decision uses the mean of top 5 scores against threshold 0.5.
+    scores_tensor = torch.tensor(segment_scores)
+    top_count = min(PHASE1_TOP_SCORE_COUNT, scores_tensor.numel())
+    if top_count == 0:
+        return []
+
+    top_scores, top_indices = torch.topk(scores_tensor, k=top_count)
+    top_mean_score = float(top_scores.mean().item())
+    if top_mean_score < PHASE1_MEAN_THRESHOLD:
+        return []
     
-    for i in top8_indices:
+    for i in top_indices.tolist():
         s_frame, e_frame = bounds[i]
         start_time = float(s_frame) / fps_f
         end_time = float(e_frame) / fps_f

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from backend.auth import get_current_user
 from backend.database import get_db
-from backend.models import ActivityLog, AnomalySegment, Video
+from backend.models import ActivityLog, AnomalySegment, User, Video
 from backend.schemas import ApiResponse, ProfileActivityRead, ProfileStatsRead
 
 
@@ -10,7 +11,10 @@ router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
 @router.get("/stats", response_model=ApiResponse[ProfileStatsRead])
-def get_profile_stats(db: Session = Depends(get_db)) -> ApiResponse[ProfileStatsRead]:
+def get_profile_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[ProfileStatsRead]:
     feedback_count = (
         db.query(AnomalySegment)
         .filter(AnomalySegment.feedback_submitted_at.is_not(None))
@@ -27,6 +31,7 @@ def get_profile_stats(db: Session = Depends(get_db)) -> ApiResponse[ProfileStats
 @router.get("/activity", response_model=ApiResponse[list[ProfileActivityRead]])
 def get_profile_activity(
     limit: int = Query(default=10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[ProfileActivityRead]]:
     activities = (

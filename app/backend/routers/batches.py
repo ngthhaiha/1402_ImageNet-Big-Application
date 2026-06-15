@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from backend.auth import get_current_user
 from backend.database import get_db
-from backend.models import Batch, Video
+from backend.models import Batch, User, Video
 from backend.schemas import ApiResponse, BatchDetailRead, BatchRead, VideoRead
 
 
@@ -18,7 +19,10 @@ def _api_error(message: str, status_code: int = 400) -> JSONResponse:
 
 
 @router.get("/latest", response_model=ApiResponse[BatchDetailRead])
-def get_latest_batch(db: Session = Depends(get_db)) -> ApiResponse[BatchDetailRead] | JSONResponse:
+def get_latest_batch(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[BatchDetailRead] | JSONResponse:
     batch = db.query(Batch).order_by(Batch.created_at.desc(), Batch.id.desc()).first()
     if batch is None:
         return _api_error("No batch found", status_code=404)
@@ -43,6 +47,7 @@ def get_latest_batch(db: Session = Depends(get_db)) -> ApiResponse[BatchDetailRe
 @router.get("/{batch_id}", response_model=ApiResponse[BatchDetailRead])
 def get_batch_detail(
     batch_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[BatchDetailRead] | JSONResponse:
     batch = db.get(Batch, batch_id)

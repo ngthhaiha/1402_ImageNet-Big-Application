@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import func
 from sqlalchemy import create_engine
+from sqlalchemy import event, func
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
@@ -14,6 +14,18 @@ engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
 )
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=TRUNCATE")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    finally:
+        cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

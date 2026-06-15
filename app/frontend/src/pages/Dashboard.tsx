@@ -17,7 +17,7 @@ import { RecentAlerts } from '../components/dashboard/RecentAlerts'
 import { RecentInvestigations } from '../components/dashboard/RecentInvestigations'
 import { StatsCard } from '../components/dashboard/StatsCard'
 import { TopDetections } from '../components/dashboard/TopDetections'
-import { Toast } from '../components/Toast'
+import { PageHeader } from '../components/PageHeader'
 import type {
   ActivityItem,
   AlertItem,
@@ -75,7 +75,6 @@ export function Dashboard() {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [toastOpen, setToastOpen] = useState(false)
 
   const totalInvestigationCount = hasMoreInvestigations
     ? investigations.length + 1
@@ -223,22 +222,49 @@ export function Dashboard() {
     }
   }
 
-  function showComingSoon() {
-    setToastOpen(true)
+  function formatCsvValue(value: string | number | null): string {
+    return `"${String(value ?? '').replace(/"/g, '""')}"`
+  }
+
+  function exportInvestigationData() {
+    const headers = [
+      'Video ID',
+      'Filename',
+      'Detected Activity',
+      'Confidence',
+      'Anomaly Score',
+      'Review Status',
+      'Created At',
+    ]
+    const rows = investigations.map((item) => [
+      item.video_id,
+      item.filename,
+      item.detected_activity,
+      item.confidence,
+      item.anomaly_score,
+      item.investigation_status,
+      item.created_at,
+    ])
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => formatCsvValue(cell)).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const downloadUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = 'recent_investigations.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(downloadUrl)
   }
 
   return (
     <section className="min-h-screen bg-[#FAF8FF] px-8 py-8 text-[#131B2E]">
-      <Toast
-        open={toastOpen}
-        title="Coming soon"
-        message="This dashboard action is not available in the demo yet."
-        variant="info"
-        onClose={() => setToastOpen(false)}
-      />
+      <PageHeader pageName="Dashboard" />
 
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
-        <section className="relative overflow-hidden rounded-xl border border-[rgba(195,198,215,0.30)] bg-white p-12 shadow-sm">
+        <section className="relative overflow-hidden rounded-xl border border-[#C3C6D7] bg-white p-12 shadow-sm">
           {/* Decorative blur circle — matches Figma */}
           <div
             className="pointer-events-none absolute"
@@ -276,7 +302,7 @@ export function Dashboard() {
         </section>
 
         {error ? (
-          <div className="rounded-xl border border-[rgba(195,198,215,0.30)] bg-red-50 px-4 py-3 text-sm text-red-800">
+          <div className="rounded-xl border border-[#C3C6D7] bg-red-50 px-4 py-3 text-sm text-red-800">
             {error}
           </div>
         ) : null}
@@ -287,24 +313,17 @@ export function Dashboard() {
           ))}
         </div>
 
-        <section className="flex flex-col gap-6 xl:flex-row">
-          <div className="flex-1">
+        <section className="flex flex-col items-start gap-6 xl:flex-row">
+          <div className="flex w-full flex-1 flex-col gap-6">
             <AnomalyDonut items={distribution} />
-          </div>
-          <div className="w-full shrink-0 xl:w-80">
-            <RecentActivity items={activity} />
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-6 xl:flex-row">
-          <div className="flex-1">
             <RecentAlerts
               items={alerts}
               onRowClick={(videoId) => navigate(`/videos/${videoId}`)}
-              onViewAll={showComingSoon}
+              onViewAll={() => navigate('/alerts')}
             />
           </div>
-          <div className="w-full shrink-0 xl:w-80">
+          <div className="flex w-full shrink-0 flex-col gap-6 xl:w-80">
+            <RecentActivity items={activity} />
             <TopDetections items={topDetections} />
           </div>
         </section>
@@ -326,7 +345,7 @@ export function Dashboard() {
           onLoadMore={loadMoreInvestigations}
           onRowClick={(videoId) => navigate(`/videos/${videoId}`)}
           onFilterClick={() => setIsFilterOpen((current) => !current)}
-          onExportData={showComingSoon}
+          onExportData={exportInvestigationData}
         />
 
         {isLoading ? (

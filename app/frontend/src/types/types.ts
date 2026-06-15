@@ -39,6 +39,7 @@ export type ReviewStatus = 'PENDING_REVIEW' | 'LABEL_CORRECT' | 'CORRECTED' | 'L
 export type Severity = 'HIGH' | 'MEDIUM' | 'LOW'
 export type InvestigationStatus = 'HIGH ALERT' | 'IN REVIEW' | 'VALIDATED'
 export type DashboardActivityType = 'UPLOAD' | 'REVIEW_COMPLETE' | 'FLAG'
+export type NotificationType = 'success' | 'error' | 'warning' | 'info'
 
 export const CLASS_COLORS: Record<string, string> = {
   Abuse: '#E91E63',
@@ -58,10 +59,44 @@ export const CLASS_COLORS: Record<string, string> = {
   Other: '#9E9E9E',
 }
 
+export const TYPE_COLORS: Record<string, string> = {
+  success: '#059669',
+  error: '#BA1A1A',
+  warning: '#D97706',
+  info: '#004AC6',
+}
+
 export interface ApiResponse<T> {
   success: boolean
   data: T | null
   message: string
+}
+
+export interface User {
+  id: number
+  username: string
+  email: string
+}
+
+export interface AuthResponse {
+  token: string
+  user: User
+}
+
+export interface Notification {
+  id: number
+  type: NotificationType
+  title: string
+  message: string
+  target_url: string | null
+  video_id: string | null
+  is_read: boolean
+  created_at: string
+}
+
+export interface NotificationListResponse {
+  items: Notification[]
+  total: number
 }
 
 export interface Batch {
@@ -154,8 +189,62 @@ export interface DashboardStats {
   reviewed_cases: number
 }
 
+export interface AlertStats {
+  total_alerts: number
+  high_severity: number
+  pending_reviews: number
+  reviewed_alerts: number
+}
+
+export interface AlertFilter {
+  name: string
+  activity: string
+  severity: '' | Severity
+  status: '' | 'PENDING_REVIEW' | 'REVIEWED'
+  date: string
+}
+
+export interface AlertLogItem {
+  id: number
+  video_id: string
+  filename: string
+  time: string
+  start_time: number
+  end_time: number
+  activity_type: AnomalyLabel
+  confidence_score: number
+  anomaly_score: number
+  severity: Severity
+  review_status: ReviewStatus
+  status: 'Unreviewed' | 'Reviewed'
+  created_at: string
+}
+
+export interface AlertLogResponse {
+  items: AlertLogItem[]
+  total: number
+  page: number
+  total_pages: number
+}
+
+export interface CriticalAlertItem {
+  id: number
+  video_id: string
+  filename: string
+  time: string
+  start_time: number
+  end_time: number
+  activity_type: AnomalyLabel
+  confidence_score: number
+  anomaly_score: number
+  review_status: ReviewStatus
+  status: 'Unreviewed' | 'Reviewed'
+  created_at: string
+}
+
 export interface DistributionItem {
   class: string
+  predicted_class?: AnomalyLabel
   count: number
   percentage: number
 }

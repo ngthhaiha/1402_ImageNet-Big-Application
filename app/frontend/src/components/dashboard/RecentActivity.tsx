@@ -45,9 +45,20 @@ function formatRelativeTime(value: string): string {
   return date.toLocaleDateString('en-GB')
 }
 
+function getActivityVideoName(detail: string): string {
+  const marker = ' in '
+  const markerIndex = detail.lastIndexOf(marker)
+
+  if (markerIndex === -1) {
+    return detail
+  }
+
+  return detail.slice(markerIndex + marker.length)
+}
+
 export function RecentActivity({ items }: RecentActivityProps) {
   return (
-    <article className="rounded-xl border border-[rgba(195,198,215,0.30)] bg-white p-8 shadow-sm">
+    <article className="rounded-xl border border-[#C3C6D7] bg-white p-8 shadow-sm">
       <div className="mb-8">
         <h2 className="dashboard-section-title text-[#131B2E]">Recent Activity</h2>
       </div>
@@ -99,7 +110,7 @@ export function RecentActivity({ items }: RecentActivityProps) {
                       color: '#737686',
                     }}
                   >
-                    {item.detail} {'\u2022'} {formatRelativeTime(item.created_at)}
+                    {getActivityVideoName(item.detail)} {'\u2022'} {formatRelativeTime(item.created_at)}
                   </span>
                 </div>
               </div>

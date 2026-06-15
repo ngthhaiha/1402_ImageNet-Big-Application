@@ -8,9 +8,9 @@
 
 ## Current Status
 
-**Đang ở task**: Task 12 hoàn thành — chờ bắt đầu Task 13  
+**Đang ở task**: Chưa bắt đầu  
 **Vấn đề hiện tại**: Không có  
-**Ghi chú**: Labels đã chốt — xem REQUIREMENTS.md phần Anomaly Labels. Node.js LTS đã được cài để scaffold frontend bằng Vite.
+**Ghi chú**: Labels đã chốt — xem REQUIREMENTS.md phần Anomaly Labels
 
 ---
 
@@ -45,7 +45,7 @@
   - Trigger worker loop (BackgroundTask)
 
 - [x] **Task 4**: Worker với concurrency = 1
-  - `worker.py`: `start_worker_loop()` poll job PENDING theo FIFO. Worker loop phải có global lock / is_running flag. Nếu worker đang chạy thì BackgroundTask mới không start thêm loop khác.
+  - `worker.py`: `start_worker_loop()` poll job PENDING theo FIFO
   - Update status + progress_step đúng thứ tự:
     - WAITING → PROCESSING, progress_step = PHASE1_START
     - Sau Phase 1: progress_step = PHASE1_DONE
@@ -61,7 +61,7 @@
   - `GET /api/videos` — danh sách
   - `GET /api/videos/:id` — chi tiết + segments
   - `GET /api/batches/:id` — batch info + tất cả videos trong batch
-  - `POST /api/videos/:id/retry` — tạo lại job cho video FAILED 
+  - `POST /api/videos/:id/retry` — tạo lại job cho video FAILED
   - Static: `GET /uploads/{filename}`
 
 - [x] **Task 6**: Feedback + Export + Dashboard APIs
@@ -147,13 +147,84 @@
 
 ---
 
+- [x] **Task 18**: Alerts Backend APIs
+  - `GET /api/alerts/stats` — 4 summary cards
+  - `GET /api/alerts/log?name=&activity=&severity=&status=&date=&page=1&limit=10` — có filter + pagination
+  - `GET /api/alerts/distribution` — top 5 class + count + percentage
+  - `GET /api/alerts/critical?limit=10` — segments có anomaly_score ≥ 0.85
+  - Tạo `backend/routers/alerts.py`, include vào `main.py`
+  - Severity tính ở backend từ anomaly_score (≥0.85=HIGH, 0.65-0.84=MEDIUM, <0.65=LOW)
+
+- [x] **Task 19**: Alerts Page (`/alerts`) + Video Detail query param
+  - Đọc ALERTS_UI_SPEC.md trước khi code
+  - 4 summary cards: data từ `GET /api/alerts/stats`
+  - Filter bar: search name + 3 dropdowns + date picker + Reset
+  - Alert Log table: data từ `GET /api/alerts/log`, pagination 10 rows
+  - Alert Distribution card: bar chart CSS thuần (không Recharts)
+  - Speed Up Analysis card: static, hard-code
+  - Recent Critical Alerts table: data từ `GET /api/alerts/critical`
+  - Click "View Detail" / "View Investigation" → navigate `/videos/:id?segment=:seg_id`
+  - Cập nhật VideoDetail.tsx: đọc `?segment=` query param → auto-select segment + seek video
+
+- [x] **Task 20**: Notification Backend
+  - Thêm `Notification` model vào `models.py` (đúng theo DATABASE_SCHEMA.md)
+  - Chạy `create_all()` tạo bảng `notifications`
+  - Tạo helper `create_notification(db, type, title, message, target_url, video_id)` trong `utils.py`
+  - Gọi helper trong `worker.py` đúng 5 trigger points (PENDING_CONFIRM có/không segment, FAILED, batch complete, low confidence)
+  - Tạo `backend/routers/notifications.py` với 4 endpoints
+  - Include router vào `main.py`
+  - Thêm Pydantic schemas vào `schemas.py`
+
+- [x] **Task 21**: Notification Frontend
+  - Đọc `NOTIFICATION_UI_SPEC.md` trước khi code
+  - Tạo `NotificationContext` ở App level (shared state)
+  - Polling `GET /api/notifications?is_read=0` mỗi 10 giây
+  - Build `NotificationStack` component (góc dưới trái, hover expand/collapse)
+  - Build `NotificationBell` component (header, dropdown giống Facebook)
+  - Cập nhật `Header` component: tích hợp bell + badge
+  - Cập nhật `App.tsx`: mount `NotificationStack` + `NotificationProvider`
+  - Cập nhật `VideoDetail.tsx`: không ảnh hưởng gì (navigate vẫn như cũ)
+  - Thêm API functions vào `api.ts`
+  - Thêm TypeScript interfaces vào `types.ts`
+
+
+- [x] **Task 22**: Auth Backend
+  - `pip install passlib[bcrypt] python-jose[cryptography]`
+  - Thêm `User` model vào `models.py` (đúng theo DATABASE_SCHEMA.md)
+  - Chạy `create_all()` tạo bảng `users`
+  - Tạo `backend/auth.py`: hash_password, verify_password, create_access_token, get_current_user
+  - Tạo `backend/routers/auth.py`: POST /register, POST /login, GET /me
+  - Thêm schemas: RegisterRequest, LoginRequest, AuthResponse, UserResponse
+  - Include router vào main.py
+  - **CHƯA** thêm `get_current_user` vào các routes khác — để Task 23 làm riêng
+
+- [x] **Task 23**: Protect existing API routes
+  - Thêm `current_user: User = Depends(get_current_user)` vào TẤT CẢ routes hiện có
+    (videos, batches, segments, dashboard, alerts, profile, notifications)
+  - KHÔNG thêm vào: `/api/auth/*`, static file serving `/uploads/*`
+  - Test: gọi 1 API không có token → verify 401
+  - Test: gọi với token hợp lệ → verify vẫn hoạt động như cũ
+
+- [x] **Task 24**: Auth Frontend
+  - Đọc `AUTH_UI_SPEC.md` trước khi code
+  - `context/AuthContext.tsx`: user, token, login(), register(), logout()
+  - `components/ProtectedRoute.tsx`
+  - `pages/Login.tsx`, `pages/Register.tsx` — layout riêng, không Sidebar/Header
+  - Axios interceptors: request thêm Bearer token, response 401 → logout + redirect
+  - Cập nhật `App.tsx`: wrap routes với ProtectedRoute
+  - Cập nhật Sidebar "Logout" button: gọi logout()
+  - Cập nhật Profile "Log Out from Session": gọi logout() (không còn toast)
+  - Header: hiển thị username từ AuthContext
+  - `npm.cmd run build` pass, không có TypeScript errors
+
+
 ### Phase 4 — Integration & Polish
 
-- [ ] **Task 13**: Integrate AI pipeline thật
+- [x] **Task 13**: Integrate AI pipeline thật
   - Thay stub trong worker.py bằng import pipeline PyTorch thật
   - Test end-to-end với video thật
 
-- [ ] **Task 14**: Seed data
+- [x] **Task 14**: Seed data
   - `seed.py`: insert 2–3 video COMPLETED với segments và feedback mẫu
   - `python seed.py` cho ra data demo ngay
 

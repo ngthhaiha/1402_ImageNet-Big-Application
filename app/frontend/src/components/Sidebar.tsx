@@ -1,6 +1,8 @@
-import { BarChart3, Bell, ListVideo, Plus, UploadCloud, User, Video } from 'lucide-react'
+import { BarChart3, Bell, ListVideo, LogOut, UploadCloud, User, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+
+import { useAuth } from '../context/AuthContext'
 
 interface NavItem {
   label: string
@@ -17,8 +19,17 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 export function Sidebar() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { logout } = useAuth()
+
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
+  }
+
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-[#C3C6D7] bg-white px-4 py-4 lg:min-h-screen lg:w-60 lg:border-b-0 lg:border-r lg:bg-[#F2F3FF]">
+    <aside className="flex w-full shrink-0 flex-col border-b border-[#C3C6D7] bg-white px-4 py-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:border-b-0 lg:border-r lg:bg-[#F2F3FF]">
       <div className="mb-4 flex items-center gap-4 px-2 lg:mb-6">
         <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#004AC6] text-white">
           <Video className="h-5 w-5" aria-hidden="true" />
@@ -41,7 +52,8 @@ export function Sidebar() {
               className={({ isActive }) =>
                 [
                   'flex items-center gap-4 whitespace-nowrap rounded-lg px-4 py-2 text-xs uppercase tracking-wide transition',
-                  isActive
+                  'sidebar-nav-link',
+                  (item.to === '/alerts' ? location.pathname === '/alerts' : isActive)
                     ? 'bg-[#D0E1FB] font-bold text-[#131B2E]'
                     : 'font-medium text-[#434655] hover:bg-slate-100 hover:text-slate-950',
                 ].join(' ')
@@ -54,15 +66,14 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-4 border-t border-[#C3C6D7] pt-4 lg:mt-auto">
-        <NavLink
-          to="/"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#004AC6] px-4 py-2 text-xs font-medium uppercase tracking-wide text-white shadow-md transition hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New Investigation
-        </NavLink>
-      </div>
+      <button
+        type="button"
+        className="sidebar-logout-button mt-4 flex items-center gap-4 whitespace-nowrap px-4 py-2 text-xs font-bold uppercase tracking-wide lg:mt-auto"
+        onClick={handleLogout}
+      >
+        <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
+        Logout
+      </button>
     </aside>
   )
 }

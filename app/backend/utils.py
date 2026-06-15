@@ -41,3 +41,48 @@ def format_time(seconds: float) -> str:
     minutes = total_seconds // 60
     remaining_seconds = total_seconds % 60
     return f"{minutes:02d}:{remaining_seconds:02d}"
+
+
+def create_notification(
+    db,
+    notification_type: str,
+    title: str,
+    message: str,
+    target_url: str | None = None,
+    video_id: str | None = None,
+):
+    created_at = datetime.utcnow().isoformat()
+
+    if hasattr(db, "add"):
+        from backend.models import Notification
+
+        notification = Notification(
+            type=notification_type,
+            title=title,
+            message=message,
+            target_url=target_url,
+            video_id=video_id,
+            is_read=0,
+            created_at=created_at,
+        )
+        db.add(notification)
+        db.commit()
+        return notification
+
+    db.execute(
+        """
+        INSERT INTO notifications (
+            type,
+            title,
+            message,
+            target_url,
+            video_id,
+            is_read,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, 0, ?)
+        """,
+        (notification_type, title, message, target_url, video_id, created_at),
+    )
+    db.commit()
+    return None

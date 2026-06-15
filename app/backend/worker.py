@@ -8,7 +8,7 @@ PROJECT_ROOT = BACKEND_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.utils import vietnam_now_iso
+from backend.utils import create_notification, vietnam_now_iso
 
 try:
     from ai_pipeline import run_phase1, run_phase2
@@ -42,6 +42,7 @@ ANOMALY_LABELS = {
     "Normal",
     "Other",
 }
+ADJACENT_SEGMENT_GAP_SECONDS = 1.0
 
 _worker_lock = Lock()
 _is_running = False
@@ -146,6 +147,8 @@ def run_pipeline(video_id: str, db_path: str) -> None:
                 ),
             )
 
+        _create_video_notifications(connection, video, video_id, classified_segments)
+
         connection.execute(
             """
             UPDATE videos
@@ -167,6 +170,7 @@ def run_pipeline(video_id: str, db_path: str) -> None:
             (now, video_id),
         )
         connection.commit()
+        _maybe_create_batch_complete_notification(connection, video_id)
     except Exception as exc:
         connection.rollback()
         _mark_failed(connection, video_id, str(exc))
@@ -176,6 +180,8 @@ def run_pipeline(video_id: str, db_path: str) -> None:
 
 def _connect(db_path: str) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
+    connection.execute("PRAGMA journal_mode=TRUNCATE")
+    connection.execute("PRAGMA busy_timeout=5000")
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -251,6 +257,140 @@ def _mark_failed(connection: sqlite3.Connection, video_id: str, error_message: s
         (now, video_id),
     )
     connection.commit()
+    video = connection.execute(
+        "SELECT * FROM videos WHERE id = ?",
+        (video_id,),
+    ).fetchone()
+    video_name = video["filename"] if video is not None else video_id
+    create_notification(
+        connection,
+        notification_type="error",
+        title="Video processing failed",
+        message=f"Video {video_name} failed during processing. {error_message}",
+        target_url=f"/videos/{video_id}",
+        video_id=video_id,
+    )
+    _maybe_create_batch_complete_notification(connection, video_id)
+
+
+def _create_video_notifications(
+    connection: sqlite3.Connection,
+    video: sqlite3.Row,
+    video_id: str,
+    classified_segments: list[tuple[dict, dict]],
+) -> None:
+    video_name = video["filename"]
+    if classified_segments:
+        group_count = _count_classified_segment_groups(classified_segments)
+        create_notification(
+            connection,
+            notification_type="success",
+            title="Video detected as abnormal",
+            message=_format_anomaly_segment_message(video_name, group_count),
+            target_url=f"/videos/{video_id}",
+            video_id=video_id,
+        )
+
+        low_confidence_segments = [
+            result
+            for _, result in classified_segments
+            if result["confidence_score"] < 0.6
+        ]
+        if low_confidence_segments:
+            create_notification(
+                connection,
+                notification_type="warning",
+                title="Low confidence detection",
+                message=(
+                    f"Video {video_name} has {len(low_confidence_segments)} "
+                    "segment(s) with low confidence. Manual review recommended."
+                ),
+                target_url=f"/videos/{video_id}",
+                video_id=video_id,
+            )
+    else:
+        create_notification(
+            connection,
+            notification_type="info",
+            title="Video processing complete",
+            message=f"Video {video_name} processed with no anomaly detected.",
+            target_url=f"/videos/{video_id}",
+            video_id=video_id,
+        )
+
+
+def _count_classified_segment_groups(classified_segments: list[tuple[dict, dict]]) -> int:
+    group_count = 0
+    previous_segment = None
+    previous_class = None
+
+    sorted_segments = sorted(
+        classified_segments,
+        key=lambda item: item[0]["start_time"],
+    )
+
+    for segment, result in sorted_segments:
+        predicted_class = result["predicted_class"]
+        is_same_activity = predicted_class == previous_class
+        is_time_adjacent = (
+            previous_segment is not None
+            and segment["start_time"] - previous_segment["end_time"]
+            <= ADJACENT_SEGMENT_GAP_SECONDS
+        )
+
+        if not is_same_activity or not is_time_adjacent:
+            group_count += 1
+
+        previous_segment = segment
+        previous_class = predicted_class
+
+    return group_count
+
+
+def _format_anomaly_segment_message(video_name: str, group_count: int) -> str:
+    if group_count == 1:
+        return f"Video {video_name} has an anomaly segment waiting for review."
+
+    return f"Video {video_name} has {group_count} anomaly segments waiting for review."
+
+
+def _maybe_create_batch_complete_notification(
+    connection: sqlite3.Connection,
+    video_id: str,
+) -> None:
+    video = connection.execute(
+        "SELECT batch_id FROM videos WHERE id = ?",
+        (video_id,),
+    ).fetchone()
+    if video is None or video["batch_id"] is None:
+        return
+
+    batch_id = video["batch_id"]
+    videos = connection.execute(
+        "SELECT status FROM videos WHERE batch_id = ?",
+        (batch_id,),
+    ).fetchall()
+    if not videos:
+        return
+
+    terminal_statuses = {"PENDING_CONFIRM", "FAILED", "COMPLETED"}
+    if any(video_row["status"] not in terminal_statuses for video_row in videos):
+        return
+
+    success_count = sum(
+        1
+        for video_row in videos
+        if video_row["status"] in {"PENDING_CONFIRM", "COMPLETED"}
+    )
+    total_count = len(videos)
+    create_notification(
+        connection,
+        notification_type="info",
+        title="Batch processing complete",
+        message=f"{success_count} of {total_count} videos processed successfully.",
+        target_url="/queue",
+        video_id=None,
+    )
 
 
 def _resolve_video_path(file_path: str) -> Path:

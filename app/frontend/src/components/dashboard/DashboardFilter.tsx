@@ -30,12 +30,12 @@ export function DashboardFilter({ value, onFilterChange }: DashboardFilterProps)
   }
 
   return (
-    <div className="border-y border-[rgba(195,198,215,0.30)] bg-[rgba(242,243,255,0.35)] px-6 py-4">
+    <div className="border-y border-[#C3C6D7] bg-[rgba(242,243,255,0.35)] px-6 py-4">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_auto_auto] xl:items-end">
         <label className="flex flex-col gap-2 text-sm font-semibold text-[#434655]">
           Anomaly Class
           <select
-            className="h-11 rounded-lg border border-[rgba(195,198,215,0.30)] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[rgba(195,198,215,0.30)] focus:ring-2 focus:ring-[#E2E7FF]"
+            className="h-11 rounded-lg border border-[#C3C6D7] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[#C3C6D7] focus:ring-2 focus:ring-[#E2E7FF]"
             value={draft.anomaly_class}
             onChange={(event) =>
               setDraft((current) => ({ ...current, anomaly_class: event.target.value }))
@@ -53,7 +53,7 @@ export function DashboardFilter({ value, onFilterChange }: DashboardFilterProps)
         <label className="flex flex-col gap-2 text-sm font-semibold text-[#434655]">
           Date From
           <input
-            className="h-11 rounded-lg border border-[rgba(195,198,215,0.30)] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[rgba(195,198,215,0.30)] focus:ring-2 focus:ring-[#E2E7FF]"
+            className="h-11 rounded-lg border border-[#C3C6D7] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[#C3C6D7] focus:ring-2 focus:ring-[#E2E7FF]"
             type="date"
             value={draft.date_from}
             onChange={(event) => setDraft((current) => ({ ...current, date_from: event.target.value }))}
@@ -63,7 +63,7 @@ export function DashboardFilter({ value, onFilterChange }: DashboardFilterProps)
         <label className="flex flex-col gap-2 text-sm font-semibold text-[#434655]">
           Date To
           <input
-            className="h-11 rounded-lg border border-[rgba(195,198,215,0.30)] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[rgba(195,198,215,0.30)] focus:ring-2 focus:ring-[#E2E7FF]"
+            className="h-11 rounded-lg border border-[#C3C6D7] bg-white px-3 text-sm font-medium text-[#131B2E] outline-none focus:border-[#C3C6D7] focus:ring-2 focus:ring-[#E2E7FF]"
             type="date"
             value={draft.date_to}
             onChange={(event) => setDraft((current) => ({ ...current, date_to: event.target.value }))}
@@ -79,7 +79,7 @@ export function DashboardFilter({ value, onFilterChange }: DashboardFilterProps)
         </button>
         <button
           type="button"
-          className="inline-flex h-11 items-center justify-center rounded-lg border border-[rgba(195,198,215,0.30)] bg-white px-5 text-sm font-semibold text-[#505F76] hover:bg-gray-50"
+          className="inline-flex h-11 items-center justify-center rounded-lg border border-[#C3C6D7] bg-white px-5 text-sm font-semibold text-[#505F76] hover:bg-gray-50"
           onClick={resetFilter}
         >
           Reset

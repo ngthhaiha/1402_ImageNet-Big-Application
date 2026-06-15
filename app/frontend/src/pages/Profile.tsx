@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
 import {
   AlertTriangle,
   Bell,
@@ -24,7 +24,9 @@ import type { LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { getProfileActivity, getProfileStats } from '../api/api'
+import { PageHeader } from '../components/PageHeader'
 import { Toast } from '../components/Toast'
+import { useAuth } from '../context/AuthContext'
 import type {
   DashboardActivityType,
   ProfileActivityItem,
@@ -32,6 +34,9 @@ import type {
 } from '../types/types'
 
 const NOTIFICATION_STORAGE_KEY = 'notification_prefs'
+const ACTIVITY_PAGE_SIZE = 15
+const AVATAR_SIZE = 256
+const AVATAR_QUALITY = 0.86
 
 interface NotificationPrefs {
   critical_alerts: boolean
@@ -101,6 +106,115 @@ function formatRelativeTime(value: string): string {
   }
 
   return date.toLocaleDateString('en-GB')
+}
+
+function getActivityVideoName(description: string | null): string {
+  if (!description) {
+    return ''
+  }
+
+  const marker = ' in '
+  const markerIndex = description.lastIndexOf(marker)
+  return markerIndex === -1 ? description : description.slice(markerIndex + marker.length)
+}
+
+function formatActivityDescription(description: string | null): string {
+  const videoName = getActivityVideoName(description)
+  return videoName ? `Anomaly detected in ${videoName}` : 'Anomaly detected'
+}
+
+function getUserInitials(username: string | undefined): string {
+  if (!username) {
+    return 'U'
+  }
+
+  const parts = username
+    .replace(/[_.-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  }
+
+  return username.slice(0, 2).toUpperCase()
+}
+
+function getAvatarStorageKey(userId: number): string {
+  return `profile_avatar_${userId}`
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+      } else {
+        reject(new Error('Could not read image file'))
+      }
+    }
+    reader.onerror = () => reject(new Error('Could not read image file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not load image file'))
+    image.src = src
+  })
+}
+
+async function createAvatarDataUrl(file: File): Promise<string> {
+  const sourceDataUrl = await readFileAsDataUrl(file)
+  const image = await loadImage(sourceDataUrl)
+  const canvas = document.createElement('canvas')
+  canvas.width = AVATAR_SIZE
+  canvas.height = AVATAR_SIZE
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Could not prepare avatar image')
+  }
+
+  const sourceSize = Math.min(image.naturalWidth, image.naturalHeight)
+  const sourceX = (image.naturalWidth - sourceSize) / 2
+  const sourceY = (image.naturalHeight - sourceSize) / 2
+
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE)
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceSize,
+    sourceSize,
+    0,
+    0,
+    AVATAR_SIZE,
+    AVATAR_SIZE,
+  )
+
+  return canvas.toDataURL('image/jpeg', AVATAR_QUALITY)
+}
+
+function getLanguageRegion(): string {
+  const locale = navigator.language || 'en-US'
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time'
+  const offsetMinutes = -new Date().getTimezoneOffset()
+  const offsetSign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteOffset = Math.abs(offsetMinutes)
+  const offsetHours = Math.floor(absoluteOffset / 60)
+  const offsetRemainder = absoluteOffset % 60
+  const offsetLabel =
+    offsetRemainder === 0
+      ? `UTC${offsetSign}${offsetHours}`
+      : `UTC${offsetSign}${offsetHours}:${String(offsetRemainder).padStart(2, '0')}`
+
+  return `${locale} - ${timeZone} (${offsetLabel})`
 }
 
 function getActivityIcon(type: DashboardActivityType): LucideIcon {
@@ -219,8 +333,11 @@ function Toggle({
 
 export function Profile() {
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const [stats, setStats] = useState<ProfileStats | null>(null)
   const [activity, setActivity] = useState<ProfileActivityItem[]>([])
+  const [activityPage, setActivityPage] = useState(1)
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(
     loadNotificationPrefs,
   )
@@ -251,6 +368,26 @@ export function Profile() {
     ],
     [stats],
   )
+  const displayName = user?.username ?? 'Loading user'
+  const displayEmail = user?.email ?? 'Loading email'
+  const displayUserId = user ? `ID: #USER-${user.id}` : 'ID: loading'
+  const avatarLabel = `${displayName} avatar`
+  const avatarInitials = getUserInitials(user?.username)
+  const languageRegion = getLanguageRegion()
+  const totalActivityPages = Math.max(1, Math.ceil(activity.length / ACTIVITY_PAGE_SIZE))
+  const paginatedActivity = activity.slice(
+    (activityPage - 1) * ACTIVITY_PAGE_SIZE,
+    activityPage * ACTIVITY_PAGE_SIZE,
+  )
+
+  useEffect(() => {
+    if (!user) {
+      setAvatarSrc(null)
+      return
+    }
+
+    setAvatarSrc(window.localStorage.getItem(getAvatarStorageKey(user.id)))
+  }, [user])
 
   useEffect(() => {
     let isMounted = true
@@ -261,7 +398,7 @@ export function Profile() {
         setError(null)
         const [statsResponse, activityResponse] = await Promise.all([
           getProfileStats(),
-          getProfileActivity(10),
+          getProfileActivity(50),
         ])
 
         if (!isMounted) {
@@ -270,6 +407,7 @@ export function Profile() {
 
         setStats(assertData(statsResponse))
         setActivity(assertData(activityResponse))
+        setActivityPage(1)
       } catch (loadError) {
         if (isMounted) {
           setError(getErrorMessage(loadError))
@@ -292,6 +430,34 @@ export function Profile() {
     setToastOpen(true)
   }
 
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
+  }
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setToastOpen(true)
+      event.target.value = ''
+      return
+    }
+
+    try {
+      const avatarDataUrl = await createAvatarDataUrl(file)
+      setAvatarSrc(avatarDataUrl)
+      if (user) {
+        window.localStorage.setItem(getAvatarStorageKey(user.id), avatarDataUrl)
+      }
+    } catch {
+      setToastOpen(true)
+    }
+    event.target.value = ''
+  }
+
   function toggleNotification(key: keyof NotificationPrefs) {
     setNotificationPrefs((current) => {
       const nextPrefs = { ...current, [key]: !current[key] }
@@ -310,25 +476,37 @@ export function Profile() {
         onClose={() => setToastOpen(false)}
       />
 
+      <PageHeader pageName="Profile" />
+
       <div className="profile-shell">
         <section className="profile-header-card">
           <div className="profile-identity">
             <div className="profile-avatar-wrap">
-              <div className="profile-avatar" aria-label="Officer James Miller avatar">
-                JM
+              <div className="profile-avatar" aria-label={avatarLabel}>
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt={avatarLabel} className="profile-avatar-image" />
+                ) : (
+                  avatarInitials
+                )}
               </div>
-              <span className="profile-camera-badge">
+              <label className="profile-camera-badge" aria-label="Upload avatar">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="profile-avatar-input"
+                  onChange={handleAvatarChange}
+                />
                 <Camera aria-hidden="true" />
-              </span>
+              </label>
             </div>
 
             <div className="profile-identity-text">
-              <h1>Officer James Miller</h1>
-              <p>Senior Security Investigator</p>
+              <h1>{displayName}</h1>
+              <p>{displayEmail}</p>
               <div className="profile-badges">
-                <span className="profile-badge profile-badge-id">ID: #SOC-882</span>
-                <span className="profile-badge profile-badge-location">Sector A, London</span>
-                <span className="profile-badge profile-badge-shift">14h Current Shift</span>
+                <span className="profile-badge profile-badge-id">{displayUserId}</span>
+                <span className="profile-badge profile-badge-location">Authenticated User</span>
+                <span className="profile-badge profile-badge-shift">Active Session</span>
               </div>
             </div>
           </div>
@@ -363,7 +541,7 @@ export function Profile() {
 
               <div className="profile-activity-list">
                 {activity.length > 0 ? (
-                  activity.map((item) => {
+                  paginatedActivity.map((item) => {
                     const Icon = getActivityIcon(item.type)
                     const isClickable = item.video_id !== null
                     return (
@@ -389,7 +567,7 @@ export function Profile() {
                             </span>
                           </div>
                           <p className="profile-activity-description">
-                            {item.description ?? 'No additional details'}
+                            {formatActivityDescription(item.description)}
                           </p>
                           {item.type === 'REVIEW_COMPLETE' ? (
                             <span className="profile-critical-badge">CRITICAL</span>
@@ -405,9 +583,24 @@ export function Profile() {
                 )}
               </div>
 
-              <button type="button" className="profile-history-button" onClick={showComingSoon}>
-                View Full Activity History
-              </button>
+              {activity.length > ACTIVITY_PAGE_SIZE ? (
+                <div className="profile-activity-pagination" aria-label="Activity pages">
+                  {Array.from({ length: totalActivityPages }, (_, index) => index + 1).map(
+                    (page) => (
+                      <button
+                        key={page}
+                        type="button"
+                        className={`profile-activity-page-button ${
+                          page === activityPage ? 'profile-activity-page-active' : ''
+                        }`}
+                        onClick={() => setActivityPage(page)}
+                      >
+                        {page}
+                      </button>
+                    ),
+                  )}
+                </div>
+              ) : null}
             </article>
           </div>
 
@@ -416,13 +609,13 @@ export function Profile() {
               <SettingsRow
                 icon={Mail}
                 label="Email Address"
-                value="j.miller@ssis.hq.com"
+                value={displayEmail}
                 onClick={showComingSoon}
               />
               <SettingsRow
                 icon={Globe}
                 label="Language & Region"
-                value="English (UK) - UTC +0"
+                value={languageRegion}
                 onClick={showComingSoon}
               />
             </ProfileCard>
@@ -488,7 +681,7 @@ export function Profile() {
               </div>
             </ProfileCard>
 
-            <button type="button" className="profile-logout-button" onClick={showComingSoon}>
+            <button type="button" className="profile-logout-button" onClick={handleLogout}>
               <LogOut aria-hidden="true" />
               Log Out from Session
             </button>

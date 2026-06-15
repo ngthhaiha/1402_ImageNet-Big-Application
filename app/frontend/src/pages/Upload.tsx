@@ -4,6 +4,7 @@ import { FileVideo, FolderOpen, Info, Trash2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { probeVideoDuration, uploadVideos } from '../api/api'
+import { PageHeader } from '../components/PageHeader'
 import { ProgressBar } from '../components/ProgressBar'
 import { StatusBadge } from '../components/StatusBadge'
 import { Toast } from '../components/Toast'
@@ -390,10 +391,11 @@ export function Upload() {
         onClose={() => setToast(null)}
       />
 
+      <PageHeader pageName="Upload Video" />
+
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <div>
-          <p className="text-sm font-medium text-[#434655]">Cases / Upload Video</p>
-          <h2 className="mt-2 text-3xl font-semibold text-[#131B2E]">Upload Surveillance Videos</h2>
+          <h2 className="text-3xl font-semibold text-[#131B2E]">Upload Surveillance Videos</h2>
           <p className="mt-2 text-base text-[#434655]">
             Add video files to the processing queue for automated anomaly detection.
           </p>

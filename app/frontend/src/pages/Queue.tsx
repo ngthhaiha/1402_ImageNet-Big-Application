@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  ChevronRight as BreadcrumbChevron,
   Clock3,
   Download,
   FileVideo,
@@ -18,6 +17,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { getBatchDetail, getLatestBatch, retryVideo } from '../api/api'
+import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import type { BatchDetail, ProgressStep, Video, VideoStatus } from '../types/types'
 
@@ -315,16 +315,13 @@ export function Queue() {
 
   return (
     <section className="min-h-screen bg-[#FAF8FF] px-8 py-8 text-[#131B2E]">
+      <PageHeader pageName="Analysis Queue" />
+
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-medium text-[#434655]">
-                <span>Investigations</span>
-                <BreadcrumbChevron className="h-4 w-4" aria-hidden="true" />
-                <span className="font-bold text-[#004AC6]">Analysis Queue</span>
-              </div>
-              <h2 className="mt-2 text-3xl font-semibold text-[#131B2E]">Analysis Queue</h2>
+              <h2 className="text-3xl font-semibold text-[#131B2E]">Analysis Queue</h2>
               <p className="mt-2 text-base text-[#434655]">
                 Real-time AI telemetry for the active investigation batch.
               </p>

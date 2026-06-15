@@ -26,7 +26,7 @@ export function StatsCard({
   description,
 }: StatsCardProps) {
   return (
-    <article className="dashboard-stats-card w-full rounded-xl border border-[rgba(195,198,215,0.30)] bg-white">
+    <article className="dashboard-stats-card w-full rounded-xl border border-[#C3C6D7] bg-white">
       <div className="flex items-start justify-between">
         <div className={`dashboard-stat-icon-box flex items-center justify-center rounded-lg ${iconBg}`}>
           <Icon

@@ -15,8 +15,10 @@ ProgressStep = Literal[
 JobStatus = Literal["PENDING", "RUNNING", "COMPLETED", "FAILED"]
 ReviewStatus = Literal["PENDING_REVIEW", "LABEL_CORRECT", "CORRECTED", "LOGGED"]
 Severity = Literal["HIGH", "MEDIUM", "LOW"]
+AlertDisplayStatus = Literal["Unreviewed", "Reviewed"]
 InvestigationStatus = Literal["HIGH ALERT", "IN REVIEW", "VALIDATED"]
 ActivityType = Literal["UPLOAD", "REVIEW_COMPLETE", "FLAG"]
+NotificationType = Literal["success", "error", "warning", "info"]
 AnomalyLabel = Literal[
     "Abuse",
     "Arrest",
@@ -42,6 +44,30 @@ class ApiResponse(BaseModel, Generic[DataT]):
     success: bool
     data: DataT | None
     message: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username_or_email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    email: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: UserResponse
 
 
 class BatchBase(BaseModel):
@@ -203,4 +229,77 @@ class ProfileActivityRead(BaseModel):
     title: str
     description: str | None = None
     video_id: str | None = None
+    created_at: str
+
+
+class NotificationItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: NotificationType
+    title: str
+    message: str
+    target_url: str | None = None
+    video_id: str | None = None
+    is_read: bool
+    created_at: str
+
+
+class NotificationListResponse(BaseModel):
+    items: list[NotificationItem]
+    total: int
+
+
+class UnreadCountResponse(BaseModel):
+    count: int
+
+
+class AlertStats(BaseModel):
+    total_alerts: int
+    high_severity: int
+    pending_reviews: int
+    reviewed_alerts: int
+
+
+class AlertLogItem(BaseModel):
+    id: int
+    video_id: str
+    filename: str
+    time: str
+    start_time: float
+    end_time: float
+    activity_type: AnomalyLabel
+    confidence_score: float
+    anomaly_score: float
+    severity: Severity
+    review_status: ReviewStatus
+    status: AlertDisplayStatus
+    created_at: str
+
+
+class AlertLogResponse(BaseModel):
+    items: list[AlertLogItem]
+    total: int
+    page: int
+    total_pages: int
+
+
+class DistributionItem(BaseModel):
+    predicted_class: AnomalyLabel
+    count: int
+    percentage: float
+
+
+class CriticalAlertItem(BaseModel):
+    id: int
+    video_id: str
+    filename: str
+    time: str
+    start_time: float
+    end_time: float
+    activity_type: AnomalyLabel
+    confidence_score: float
+    anomaly_score: float
+    review_status: ReviewStatus
+    status: AlertDisplayStatus
     created_at: str

@@ -3,13 +3,19 @@ import type { AxiosProgressEvent } from 'axios'
 
 import type {
   ApiResponse,
+  AlertFilter,
+  AlertLogResponse,
+  AlertStats,
+  AuthResponse,
   BatchDetail,
   ActivityItem,
   AlertItem,
+  CriticalAlertItem,
   DashboardFilter,
   DistributionItem,
   InvestigationItem,
   DashboardStats,
+  NotificationListResponse,
   ProfileActivityItem,
   ProfileStats,
   TopDetection,
@@ -17,6 +23,7 @@ import type {
   AnomalySegment,
   UploadBatchResponse,
   UploadVideoMetadata,
+  User,
   Video,
   VideoDetail,
   VideoDurationProbeResponse,
@@ -29,9 +36,62 @@ export const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
 
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const requestUrl = error.config?.url as string | undefined
+    const isAuthRequest =
+      requestUrl?.includes('/api/auth/login') ||
+      requestUrl?.includes('/api/auth/register')
+
+    if (error.response?.status === 401 && !isAuthRequest) {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  },
+)
+
 export function getUploadUrl(filePath: string): string {
   const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`
   return `${API_BASE_URL}${normalizedPath}`
+}
+
+export async function apiRegister(
+  username: string,
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>('/api/auth/register', {
+    username,
+    email,
+    password,
+  })
+  return response.data
+}
+
+export async function apiLogin(
+  usernameOrEmail: string,
+  password: string,
+): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>('/api/auth/login', {
+    username_or_email: usernameOrEmail,
+    password,
+  })
+  return response.data
+}
+
+export async function getCurrentUser(): Promise<User> {
+  const response = await apiClient.get<User>('/api/auth/me')
+  return response.data
 }
 
 export async function getVideos(): Promise<ApiResponse<Video[]>> {
@@ -143,6 +203,71 @@ function buildDashboardParams(
 
 export async function getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
   const response = await apiClient.get<ApiResponse<DashboardStats>>('/api/dashboard/stats')
+  return response.data
+}
+
+function assertApiData<T>(response: ApiResponse<T>): T {
+  if (!response.success || response.data === null) {
+    throw new Error(response.message)
+  }
+
+  return response.data
+}
+
+export async function getNotifications(params?: {
+  is_read?: boolean
+  limit?: number
+  offset?: number
+}): Promise<NotificationListResponse> {
+  const response = await apiClient.get<ApiResponse<NotificationListResponse>>(
+    '/api/notifications',
+    { params },
+  )
+  return assertApiData(response.data)
+}
+
+export async function getUnreadCount(): Promise<number> {
+  const response = await apiClient.get<ApiResponse<{ count: number }>>(
+    '/api/notifications/unread-count',
+  )
+  return assertApiData(response.data).count
+}
+
+export async function patchNotificationRead(id: number): Promise<void> {
+  await apiClient.patch(`/api/notifications/${id}/read`)
+}
+
+export async function patchNotificationReadAll(): Promise<void> {
+  await apiClient.patch('/api/notifications/read-all')
+}
+
+export async function getAlertStats(): Promise<ApiResponse<AlertStats>> {
+  const response = await apiClient.get<ApiResponse<AlertStats>>('/api/alerts/stats')
+  return response.data
+}
+
+export async function getAlertLog(
+  filter: AlertFilter,
+  page = 1,
+  limit = 10,
+): Promise<ApiResponse<AlertLogResponse>> {
+  const response = await apiClient.get<ApiResponse<AlertLogResponse>>('/api/alerts/log', {
+    params: { ...filter, page, limit },
+  })
+  return response.data
+}
+
+export async function getAlertDistribution(): Promise<ApiResponse<DistributionItem[]>> {
+  const response = await apiClient.get<ApiResponse<DistributionItem[]>>(
+    '/api/alerts/distribution',
+  )
+  return response.data
+}
+
+export async function getCriticalAlerts(limit = 10): Promise<ApiResponse<CriticalAlertItem[]>> {
+  const response = await apiClient.get<ApiResponse<CriticalAlertItem[]>>('/api/alerts/critical', {
+    params: { limit },
+  })
   return response.data
 }
 

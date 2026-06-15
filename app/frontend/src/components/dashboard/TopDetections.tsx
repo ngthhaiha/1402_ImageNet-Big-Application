@@ -8,7 +8,7 @@ export function TopDetections({ items }: TopDetectionsProps) {
   const maxCount = items.length > 0 ? Math.max(...items.map((d) => d.count)) : 1
 
   return (
-    <article className="rounded-xl border border-[rgba(195,198,215,0.30)] bg-white p-8 shadow-sm">
+    <article className="rounded-xl border border-[#C3C6D7] bg-white p-8 shadow-sm">
       <div className="mb-8">  
         <h2 className="dashboard-section-title text-[#131B2E]">Top Detections</h2>
       </div>

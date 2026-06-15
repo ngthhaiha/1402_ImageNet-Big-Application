@@ -8,8 +8,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.database import create_db
+from backend.routers.alerts import router as alerts_router
+from backend.routers import auth as auth_router
 from backend.routers.batches import router as batches_router
 from backend.routers.dashboard import router as dashboard_router
+from backend.routers.notifications import router as notifications_router
 from backend.routers.profile import router as profile_router
 from backend.routers.segments import router as segments_router
 from backend.routers.videos import router as videos_router
@@ -30,10 +33,13 @@ app.add_middleware(
 )
 
 app.include_router(videos_router)
+app.include_router(auth_router.router)
 app.include_router(batches_router)
 app.include_router(segments_router)
 app.include_router(dashboard_router)
 app.include_router(profile_router)
+app.include_router(alerts_router)
+app.include_router(notifications_router)
 
 
 @app.exception_handler(StarletteHTTPException)

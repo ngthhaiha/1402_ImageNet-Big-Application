@@ -70,13 +70,13 @@ export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps
   const visibleItems = items.slice(0, 4)
 
   return (
-    <article className="overflow-hidden rounded-xl border border-[rgba(195,198,215,0.30)] bg-white shadow-sm">
+    <article className="overflow-hidden rounded-xl border border-[#C3C6D7] bg-white shadow-sm">
       {/* Header — 32px padding with border-bottom per Figma */}
       <div
         className="flex items-center justify-between bg-white"
         style={{
           padding: 32,
-          borderBottom: '1px rgba(195, 198, 215, 0.30) solid',
+          borderBottom: '1px #C3C6D7 solid',
         }}
       >
         <h2 className="dashboard-section-title text-[#131B2E]">Recent Alerts</h2>
@@ -181,7 +181,7 @@ export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps
                   <tr
                     key={item.id}
                     className="cursor-pointer hover:bg-gray-50"
-                    style={{ borderTop: '1px rgba(195, 198, 215, 0.30) solid' }}
+                    style={{ borderTop: '1px #C3C6D7 solid' }}
                     onClick={() => onRowClick(item.video_id)}
                   >
                     <td style={{ padding: 16, fontSize: 16, fontWeight: 400, color: '#131B2E' }}>

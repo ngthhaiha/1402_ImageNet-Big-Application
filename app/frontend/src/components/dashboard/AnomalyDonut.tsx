@@ -1,4 +1,3 @@
-import { MoreHorizontal } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import { CLASS_COLORS, type DistributionItem } from '../../types/types'
@@ -24,16 +23,9 @@ export function AnomalyDonut({ items }: AnomalyDonutProps) {
   const total = sortedItems.reduce((sum, item) => sum + item.count, 0)
 
   return (
-    <article className="rounded-xl border border-[rgba(195,198,215,0.30)] bg-white p-8 shadow-sm">
+    <article className="rounded-xl border border-[#C3C6D7] bg-white p-8 shadow-sm">
       <div className="mb-8 flex items-center justify-between">
         <h2 className="dashboard-section-title text-[#131B2E]">Anomaly Distribution</h2>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#505F76] hover:bg-gray-50"
-          aria-label="Distribution menu"
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-        </button>
       </div>
 
       <div className="flex items-center gap-8">

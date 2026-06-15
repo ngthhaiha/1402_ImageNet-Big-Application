@@ -6,7 +6,7 @@
 Web app demo cho phép người dùng upload video giám sát, hệ thống tự động chạy AI pipeline để phát hiện và phân loại hành vi bất thường. Người dùng xem kết quả, xác nhận/sửa nhãn, và xem thống kê tổng hợp.
 
 **Dùng cho**: Demo đề tài nghiên cứu khoa học — không phải production.  
-**Không có login / phân quyền**: Tất cả người dùng có quyền như nhau.
+**Authentication**: Có đăng ký/đăng nhập đơn giản (JWT), mỗi user thấy toàn bộ data chung (không phân quyền theo data — chỉ phân biệt đã login/chưa).
 
 ---
 
@@ -40,12 +40,16 @@ Web app demo cho phép người dùng upload video giám sát, hệ thống tự
 - Investigator comments khi feedback
 - Xuất báo cáo (Export Report) cho từng video (JSON)
 - Profile page: stats thật từ DB + recent activity log + notification toggles (localStorage)
+- Authentication: Register + Login với JWT, protect tất cả routes
+- Notification system: persistent stack + header bell + auto-create từ backend events
 - Dashboard thống kê
 - Lưu feedback dataset
 
 ## Out of Scope (không implement, không thêm)
 
-- Login / authentication / phân quyền
+- Phân quyền theo role (admin/user khác nhau) — mọi user login đều thấy data giống nhau
+- Quên mật khẩu / reset password / email verification
+- OAuth (Google/Facebook login)
 - Thanh toán
 - Email notification
 - Export video clip (chỉ export report JSON, không export video)
@@ -386,21 +390,8 @@ Is the detected anomaly segment correct?
 
 Is the predicted activity correct?
   [✓ Label Correct]   [✎ Edit Label]
-  (nếu Edit Label: dropdown 14 options, không được hiển thị option = predict activity)
+  (nếu Edit Label: dropdown 15 options)
   (nếu Other: textarea "Describe the activity" — bắt buộc)
-(1. Bắt buộc chọn cả 2 câu hỏi.
-2. Khi Q1 = Incorrect:
-   - tự chọn Q2 = Edit Label
-   - set verified_label = Normal
-   - disable nút Label Correct
-3. Khi Q1 = Correct:
-   - cho chọn Label Correct hoặc Edit Label bình thường
-4. Nếu Edit Label:
-   - hiện dropdown label
-5. Nếu chọn Other:
-   - bắt buộc nhập mô tả
-trong case Q1 Incorrect tự chọn Edit Label, verified label mặc định Normal, khóa Label Correct.
-label mặc định là Normal và khi nhấn vào dropdown chỉ hiện Normal và Other thôi)
 
 INVESTIGATOR COMMENTS
 [Describe findings, involved parties...    ]
@@ -688,7 +679,7 @@ Card 2 value: màu `#BA1A1A` (đỏ). Card 1,3,4 value: màu `#131B2E`.
 | Dashboard | `/dashboard` | |
 | Upload Video | `/` | Trang chính |
 | Queue Analyze | `/queue` | Xem batch queue |
-| Alerts | `/alerts` | Placeholder: "Coming Soon" |
+| Alerts | `/alerts` | Alert Log + Critical Alerts + Filter (FR10) |
 | Profile | `/profile` | Stats + Activity + Settings (FR09) |
 
 ---
@@ -800,3 +791,343 @@ Card 2 value: màu `#BA1A1A` (đỏ). Card 1,3,4 value: màu `#131B2E`.
 - AC47: Click activity có video_id → navigate đúng trang
 - AC48: Notification toggles lưu state vào localStorage
 - AC49: Edit Profile / Export Activity / Settings rows → toast "Coming soon"
+
+---
+
+### FR10 — Alerts Page
+
+**Route**: `/alerts`
+**Trigger**: User click "Alerts" trên nav.
+
+---
+
+**Header**:
+- Breadcrumb: "Cases > Alert"
+- Title: "System Alerts"
+- Sub-text: "Monitor and review abnormal events detected from uploaded surveillance videos."
+
+---
+
+**4 Summary Cards** (grid ngang):
+
+| Card | Label | Value | Sub-text |
+|---|---|---|---|
+| 1 | TOTAL ALERTS | COUNT tất cả segments | "+12% from last week" (hard-code) |
+| 2 | HIGH SEVERITY | COUNT segments có anomaly_score ≥ 0.85 | "5 active now" (hard-code) |
+| 3 | PENDING REVIEWS | COUNT segments WHERE feedback_submitted_at IS NULL | "Awaiting human validation" |
+| 4 | REVIEWED ALERTS | COUNT segments WHERE feedback_submitted_at IS NOT NULL | "95.3% accuracy rate" (hard-code) |
+
+Card 1 sub-text: màu `#16A34A` (xanh lá) với icon trend up
+Card 2 sub-text: màu `#BA1A1A` (đỏ) với icon alert
+Card 4 sub-text: màu `#004AC6` (xanh)
+
+---
+
+**Filter Bar** (full width card):
+- Search input: "Filter by video name..." (text search theo video filename)
+- Dropdown: Activity Type (All + 13 anomaly labels)
+- Dropdown: Severity (All / HIGH / MEDIUM / LOW)
+- Dropdown: Review Status (All / Unreviewed / Reviewed / Pending)
+- Date picker: mm/dd/yyyy
+- Nút: Reset Filters
+
+Filter áp dụng cho Alert Log table.
+
+---
+
+**Layout Row: 2 cột** (LEFT ~65% / RIGHT ~35%)
+
+**LEFT — Alert Log table**:
+
+Header: "Alert Log" + icon filter + icon download (UI only, toast "Coming soon")
+
+Columns: TIME | VIDEO NAME | ACTIVITY TYPE | CONFIDENCE | SEVERITY | STATUS | ACTION
+
+| Column | Nội dung |
+|---|---|
+| TIME | `HH:MM:SS` từ `anomaly_segments.created_at` |
+| VIDEO NAME | tên file từ `videos.filename` (truncate nếu dài) |
+| ACTIVITY TYPE | `predicted_class` |
+| CONFIDENCE | `confidence_score` format `XX.X%` |
+| SEVERITY | Badge (HIGH/MEDIUM/LOW tính từ `anomaly_score`) |
+| STATUS | Dot + text từ `review_status` |
+| ACTION | Text link "View Investigation" → navigate `/videos/:video_id#seg-{segment_id}` |
+
+**Severity badges** (từ Figma):
+- HIGH: bg `#FFDAD6`, text `#93000A`, border-radius 9999
+- MEDIUM: bg `#BC4800`, text `#FFEDE6`, border-radius 9999
+- LOW: bg `#DAE2FD`, text `#434655`, border-radius 9999
+
+**Status display**:
+- PENDING_REVIEW: dot `#737686` + "Unreviewed"
+- LABEL_CORRECT: dot `#004AC6` + "Reviewed"
+- CORRECTED: dot `#004AC6` + "Reviewed"
+- LOGGED: dot `#004AC6` + "Reviewed"
+
+**Pagination**: "Showing X of Y results" + prev/next buttons + page numbers
+- 10 rows / page
+- Active page: bg `#2563EB`, text white
+
+---
+
+**RIGHT — 2 cards xếp dọc**:
+
+**Card 1 — Alert Distribution** (bar chart ngang đơn giản, không dùng Recharts):
+- Title: "Alert Distribution" + icon `⋮` (UI only)
+- Mỗi class: label + % text bên phải + bar ngang
+- Bar: bg `#E2E7FF`, fill `#004AC6`, height 8px, border-radius 9999
+- Data: COUNT segments GROUP BY predicted_class, tính %, sort DESC top 5
+- API: `GET /api/alerts/distribution`
+
+**Card 2 — Speed Up Analysis** (static card, không có data):
+- Background: `#2563EB` (xanh đậm)
+- Title: "Speed Up Analysis" — màu `#EEEFFF`
+- Body text: "Use the 'Auto-Validate' feature for Low severity events to focus on critical threats." — màu `#EEEFFF`
+- Nút "Try Now": bg `#EEEFFF`, text `#2563EB`, border-radius 12px
+- Click Try Now: toast "Coming soon"
+- Đây là **static card** — hard-code hoàn toàn, không có data
+
+---
+
+**Recent Critical Alerts table** (full width, bên dưới 2 cột):
+
+Header: bg `rgba(255, 218, 214, 0.20)`, border-bottom `1px #C3C6D7`
+- Icon `<AlertTriangle>` màu `#BA1A1A` + text "Recent Critical Alerts" màu `#BA1A1A`
+- Nút "Clear Feed" bên phải → **UI only**, toast "Coming soon" (không xóa data)
+
+Columns: TIME | ACTIVITY | CONFIDENCE | STATUS | ACTION
+
+Data: segments có `anomaly_score ≥ 0.85`, sort by `created_at` DESC, limit 10
+
+| Column | Nội dung |
+|---|---|
+| TIME | `HH:MM:SS` |
+| ACTIVITY | Icon bg `rgba(186,26,26,0.10)` 32×32 + `predicted_class` |
+| CONFIDENCE | `confidence_score` format `XX.X%`, màu `#BA1A1A`, weight 700 |
+| STATUS | Dot + text từ `review_status` (mapping giống Alert Log) |
+| ACTION | Nút "View Detail" → navigate `/videos/:video_id` với scroll đến segment |
+
+**Không có INTERVENE / VIEW LOG** — tất cả action là "View Detail".
+
+**Navigate behavior khi click View Detail / View Investigation**:
+- Navigate đến `/videos/:video_id`
+- Pass `segment_id` qua URL hash hoặc query param: `/videos/:video_id?segment=:segment_id`
+- Video Detail page đọc query param, auto-select segment đó trong Segments Table
+- Video seek đến `start_time` của segment đó
+
+---
+
+**API Endpoints cần thêm**:
+
+| Endpoint | Params | Mô tả |
+|---|---|---|
+| `GET /api/alerts/stats` | — | 4 summary cards |
+| `GET /api/alerts/log` | `name?, activity?, severity?, status?, date?, page=1, limit=10` | Alert Log có filter + pagination |
+| `GET /api/alerts/distribution` | — | Top 5 class + % cho Alert Distribution card |
+| `GET /api/alerts/critical` | `limit=10` | Segments có anomaly_score ≥ 0.85 |
+
+**Acceptance Criteria**:
+- AC50: 4 summary cards hiển thị đúng số liệu từ DB
+- AC51: Alert Log table load đúng data, pagination hoạt động
+- AC52: Filter (name/activity/severity/status/date) áp dụng cho Alert Log
+- AC53: Alert Distribution bar đúng % theo class
+- AC54: Recent Critical Alerts chỉ hiện segments có score ≥ 0.85
+- AC55: Click "View Detail" / "View Investigation" → navigate `/videos/:id?segment=:seg_id`
+- AC56: Video Detail tự động select đúng segment khi có query param `?segment=`
+- AC57: "Clear Feed" và "Try Now" → toast "Coming soon"
+
+---
+
+### FR11 — Notification System
+
+**Trigger**: Tự động từ backend events + user interaction.
+
+---
+
+#### 11a. Persistent Notification Stack (góc dưới trái)
+
+- Vị trí: `fixed bottom-6 left-6`, z-index cao
+- Notification mới nhất nằm trên cùng
+- **Không tự biến mất** — chỉ biến mất khi user click
+- **Collapsed state** (default): các card xếp chồng nhau dạng stack (offset nhỏ, card sau lùi xuống + vào trong)
+- **Expanded state** (khi hover): stack expand thành list đầy đủ, cards có spacing rõ ràng, không chồng nhau
+- Mouse leave → collapse về stack
+- Mỗi card hiển thị:
+  - Title: "Abnormality detected in {video_name}"
+  - Timestamp relative: "1m ago", "2h ago"...
+  - Type indicator (màu theo type: success=xanh, error=đỏ, warning=vàng, info=xanh nhạt)
+- Click card → navigate đến `/videos/:video_id` + đánh dấu `is_read = 1` + xóa khỏi stack
+- Chỉ hiển thị notifications có `is_read = 0`
+- Max hiển thị trong stack: 5 cards (nếu nhiều hơn thì hiện badge "+N more")
+
+#### 11b. Header Notification Bell
+
+- Icon chuông trong header, hiển thị badge số lượng unread
+- Badge: số đỏ góc trên phải icon, ẩn khi = 0
+- Click icon → toggle dropdown panel bên dưới header (giống Facebook)
+- Click ngoài dropdown → đóng
+- **Dropdown panel**:
+  - Title: "Notifications"
+  - List notifications sort by `created_at` DESC
+  - Mỗi item:
+    - Dot màu (unread = đậm, read = nhạt)
+    - Title: tên video
+    - Message: "Video detected as abnormal" hoặc message từ DB
+    - Timestamp relative
+    - Background: unread = nhạt hơn, read = trắng
+  - Nút **"Load more Notifications"** ở cuối (load thêm 10)
+  - Nút **"Mark all as read"** ở header dropdown
+- Click item → navigate `/videos/:video_id` + mark read + cập nhật badge
+
+#### 11c. Backend Auto-create Notifications
+
+Worker và routes tự động tạo notification khi:
+
+| Trigger | Nơi gọi | Type |
+|---|---|---|
+| Video → PENDING_CONFIRM (có segment) | `worker.py` | `success` |
+| Video → PENDING_CONFIRM (không có segment) | `worker.py` | `info` |
+| Video → FAILED | `worker.py` | `error` |
+| Batch hoàn tất | `worker.py` | `info` |
+| Segment confidence < 0.6 | `worker.py` | `warning` |
+
+#### 11d. Frontend State Management
+
+- Header bell + notification stack dùng **chung 1 data source**: React Context hoặc shared state ở App level
+- Polling `GET /api/notifications?is_read=0` mỗi **10 giây** (không cần WebSocket)
+- Khi mark read → update local state ngay (optimistic) trước khi API confirm
+- Badge, stack, dropdown đều phản ánh state chung ngay lập tức
+
+#### 11e. API Endpoints
+
+| Endpoint | Mô tả |
+|---|---|
+| `GET /api/notifications?is_read=&limit=20&offset=0` | Lấy danh sách notification |
+| `GET /api/notifications/unread-count` | Số lượng unread (cho badge) |
+| `PATCH /api/notifications/:id/read` | Mark 1 notification là read |
+| `PATCH /api/notifications/read-all` | Mark tất cả là read |
+
+**Acceptance Criteria**:
+- AC58: Backend tự tạo notification đúng 5 events
+- AC59: Stack hiển thị đúng ở góc dưới trái, không tự biến mất
+- AC60: Hover stack → expand, mouse leave → collapse
+- AC61: Click card stack → navigate + mark read + biến mất khỏi stack
+- AC62: Header bell badge hiển thị đúng số unread
+- AC63: Dropdown mở/đóng khi click bell
+- AC64: Click notification dropdown → navigate + mark read + badge giảm
+- AC65: "Mark all as read" → tất cả biến khỏi stack, badge = 0
+- AC66: Polling 10s cập nhật notification mới
+- AC67: Stack + bell dùng chung state, đồng bộ ngay khi mark read
+
+---
+
+### FR12 — Authentication (Register / Login)
+
+**Routes**: `/register`, `/login` — không bị protect.  
+**Tất cả routes khác** (`/`, `/queue`, `/videos/:id`, `/dashboard`, `/alerts`, `/profile`) — yêu cầu đã login.
+
+---
+
+#### 12a. Register Page (`/register`)
+
+**Input**:
+- Username (bắt buộc, unique)
+- Email (bắt buộc, unique, validate format)
+- Password (bắt buộc, min 6 ký tự)
+- Confirm Password (phải khớp password)
+
+**Process**:
+1. Validate frontend: email format, password length, confirm khớp
+2. `POST /api/auth/register`
+3. Backend validate: username/email chưa tồn tại, hash password (bcrypt)
+4. Tạo User record
+5. Trả về JWT token + user info
+6. Frontend lưu token vào `localStorage`, redirect `/`
+
+**Acceptance Criteria**:
+- AC68: Register thành công → tạo user trong DB, password đã hash
+- AC69: Username/email đã tồn tại → lỗi rõ ràng, không tạo user
+- AC70: Password < 6 ký tự → lỗi frontend, không gọi API
+- AC71: Confirm password không khớp → lỗi frontend
+- AC72: Register thành công → tự động login, redirect `/`
+
+---
+
+#### 12b. Login Page (`/login`)
+
+**Input**:
+- Username hoặc Email (bắt buộc)
+- Password (bắt buộc)
+
+**Process**:
+1. `POST /api/auth/login`
+2. Backend verify password (bcrypt compare)
+3. Đúng → trả về JWT token + user info
+4. Sai → lỗi "Invalid username or password"
+5. Frontend lưu token vào `localStorage`, redirect `/`
+
+**Acceptance Criteria**:
+- AC73: Login đúng credential → nhận token, redirect `/`
+- AC74: Login sai → hiện lỗi, không lưu token
+- AC75: Link "Don't have an account? Register" → `/register`
+- AC76: Link "Already have an account? Login" → `/login` (ở Register page)
+
+---
+
+#### 12c. Protected Routes
+
+- Tất cả routes trừ `/login`, `/register` yêu cầu JWT hợp lệ
+- Frontend: kiểm tra `localStorage.getItem('token')` khi mount mỗi protected route
+  - Không có token → redirect `/login`
+  - Có token nhưng API trả 401 → xóa token, redirect `/login`
+- Backend: tất cả API routes (trừ `/api/auth/*`) yêu cầu header `Authorization: Bearer {token}`
+  - Token không hợp lệ/hết hạn → trả `401 Unauthorized`
+
+**JWT payload**:
+```json
+{
+  "user_id": 1,
+  "username": "officer_james",
+  "exp": 1234567890
+}
+```
+- Thời hạn token: 7 ngày (đủ cho demo)
+- Secret key: đọc từ `.env` (`JWT_SECRET_KEY`)
+
+---
+
+#### 12d. Logout
+
+- Nút "Logout" trong Sidebar (đã có sẵn UI, hiện chưa có logic)
+- Click → xóa token từ `localStorage` → redirect `/login`
+- Profile page "Log Out from Session" button → cũng thực hiện logic này (không còn là toast "Coming soon")
+
+---
+
+#### 12e. Header — hiển thị user hiện tại
+
+- Avatar trong header (đã có UI) → hiển thị initial của username hoặc avatar mặc định
+- Click avatar → dropdown nhỏ: username + "Logout"
+
+---
+
+**API Endpoints**:
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `POST /api/auth/register` | `{username, email, password}` | `{token, user: {id, username, email}}` |
+| `POST /api/auth/login` | `{username_or_email, password}` | `{token, user: {id, username, email}}` |
+| `GET /api/auth/me` | — (cần token) | `{id, username, email}` |
+
+**Acceptance Criteria**:
+- AC77: Truy cập protected route không có token → redirect `/login`
+- AC78: Token hết hạn/invalid → API trả 401 → frontend tự redirect `/login`
+- AC79: Logout → xóa token, redirect `/login`, không thể quay lại bằng back button (replace history)
+- AC80: Header hiển thị username hiện tại từ token/`/api/auth/me`
+
+---
+
+## Navigation — Cập nhật
+
+Sau khi login, sidebar hiển thị như cũ.  
+Trước khi login, chỉ có 2 trang: `/login`, `/register` — không có sidebar.

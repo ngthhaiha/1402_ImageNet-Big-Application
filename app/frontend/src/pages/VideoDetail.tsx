@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, Download, XCircle } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 
 import { downloadVideoReport, getVideoDetail } from '../api/api'
 import { AnomalyTimeline } from '../components/AnomalyTimeline'
 import { FeedbackPanel } from '../components/FeedbackPanel'
 import { InvestigationPanel } from '../components/InvestigationPanel'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { PageHeader } from '../components/PageHeader'
 import { SegmentsTable } from '../components/SegmentsTable'
 import { VideoPlayer } from '../components/VideoPlayer'
 import type {
@@ -76,6 +77,8 @@ function ProcessingProgress({ progressStep }: { progressStep: ProgressStep }) {
 
 export function VideoDetail() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  const segmentParam = searchParams.get('segment')
   const [video, setVideo] = useState<Video | null>(null)
   const [segments, setSegments] = useState<AnomalySegment[]>([])
   const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null)
@@ -163,6 +166,32 @@ export function VideoDetail() {
     return () => window.clearInterval(intervalId)
   }, [loadVideo, video?.status])
 
+  useEffect(() => {
+    if (!segmentParam || segments.length === 0) {
+      return
+    }
+
+    const targetId = parseInt(segmentParam, 10)
+    if (Number.isNaN(targetId)) {
+      return
+    }
+
+    const found = segments.find((segment) => segment.id === targetId)
+    if (!found) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSelectedSegmentId(targetId)
+      if (videoRef.current) {
+        videoRef.current.currentTime = found.start_time
+      }
+      document.getElementById(`segment-row-${targetId}`)?.scrollIntoView({ behavior: 'smooth' })
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [segmentParam, segments])
+
   function handleFeedbackSubmitted(updatedSegment: AnomalySegment) {
     setSegments((currentSegments) => {
       const nextSegments = currentSegments.map((segment) =>
@@ -181,6 +210,7 @@ export function VideoDetail() {
       return nextSegments
     })
     setSelectedSegmentId(updatedSegment.id)
+    void loadVideo()
   }
 
   async function handleExportReport() {
@@ -209,16 +239,12 @@ export function VideoDetail() {
 
   return (
     <section className="min-h-screen bg-[#FAF8FF] px-8 py-8 text-[#131B2E]">
+      <PageHeader pageName="Segment Review" />
+
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-sm font-medium text-[#737686]">
-              <Link to="/queue" className="text-[#737686]">
-                Analysis Queue
-              </Link>{' '}
-              / <span className="font-semibold text-[#004AC6]">Segment Review</span>
-            </p>
-            <h2 className="mt-2 text-3xl font-semibold text-[#131B2E]">Video Investigation</h2>
+            <h2 className="text-3xl font-semibold text-[#131B2E]">Video Investigation</h2>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button

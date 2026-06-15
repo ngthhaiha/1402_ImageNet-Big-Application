@@ -180,3 +180,130 @@ investigator_comment: "Victim pushed against wall, not robbery"
 feedback_submitted_at: "2025-01-15T10:45:00"
 review_status: "LOGGED"
 ```
+
+---
+
+## Bảng: `activity_log`
+
+Ghi lại các hoạt động của hệ thống để hiển thị trong Profile > Recent Activity.
+
+```sql
+CREATE TABLE activity_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    type        TEXT NOT NULL,
+    -- Allowed: UPLOAD | REVIEW_COMPLETE | FLAG
+    title       TEXT NOT NULL,      -- Vd: "Uploaded Mall_Entrance_01.mp4"
+    description TEXT,               -- Vd: "Auto-tagging initiated..."
+    video_id    TEXT REFERENCES videos(id),  -- nullable, để link đến video
+    created_at  TEXT NOT NULL       -- ISO 8601
+);
+```
+
+**Khi nào ghi activity**:
+
+| Event | Type | Title pattern | Description |
+|---|---|---|---|
+| Upload video thành công | `UPLOAD` | `Uploaded {filename}` | "Video added to processing queue" |
+| Worker xong Phase 2 (PENDING_CONFIRM) | `FLAG` | `Flagged suspicious activity in {filename}` | "Detected {N} anomaly segments" — chỉ ghi nếu có segment anomaly_score > 0.8 |
+| User submit feedback (lần đầu của video) | `REVIEW_COMPLETE` | `Completed review for {filename}` | "Feedback submitted for {N} segments" |
+
+**Notes**:
+- Ghi từ backend (FastAPI routes và worker), không phải frontend
+- Không cần ghi tất cả action — chỉ 3 loại trên
+- Query cho Profile page: `SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 10`
+
+---
+
+## Index bổ sung
+
+```sql
+CREATE INDEX idx_activity_log_created_at ON activity_log(created_at);
+CREATE INDEX idx_activity_log_video_id ON activity_log(video_id);
+```
+
+---
+
+## Quan hệ (cập nhật)
+
+```
+batches (1) ──── (N) videos
+videos  (1) ──── (1) processing_jobs
+videos  (1) ──── (N) anomaly_segments
+videos  (1) ──── (N) activity_log
+```
+
+---
+
+## Bảng: `notifications`
+
+Lưu tất cả notification của hệ thống. Dùng chung cho Header Bell và Notification Stack.
+
+```sql
+CREATE TABLE notifications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    type        TEXT NOT NULL,
+    -- Allowed: "success" | "error" | "warning" | "info"
+    title       TEXT NOT NULL,
+    message     TEXT NOT NULL,
+    target_url  TEXT,           -- URL navigate khi click, vd: "/videos/{video_id}"
+    video_id    TEXT REFERENCES videos(id),  -- nullable
+    is_read     INTEGER NOT NULL DEFAULT 0,  -- 0 = unread, 1 = read
+    created_at  TEXT NOT NULL   -- ISO 8601
+);
+```
+
+**Khi nào tạo notification** (backend tự động):
+
+| Event | Type | Title | Message |
+|---|---|---|---|
+| Worker xong → PENDING_CONFIRM (có anomaly) | `success` | "Video detected as abnormal" | "Video {filename} has anomaly waiting for review." |
+| Worker xong → PENDING_CONFIRM (không có anomaly) | `info` | "Video processing complete" | "Video {filename} processed with no anomaly detected." |
+| Worker → FAILED | `error` | "Video processing failed" | "Video {filename} failed during processing." |
+| Batch hoàn tất (tất cả video PENDING_CONFIRM/FAILED) | `info` | "Batch processing complete" | "{N} of {total} videos processed successfully." |
+| Segment có confidence_score < 0.6 | `warning` | "Low confidence detection" | "Video {filename} has segments with low confidence. Manual review recommended." |
+
+**Index**:
+```sql
+CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+CREATE INDEX idx_notifications_created_at ON notifications(created_at);
+CREATE INDEX idx_notifications_video_id ON notifications(video_id);
+```
+
+---
+
+## Bảng: `users`
+
+```sql
+CREATE TABLE users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,    -- bcrypt hash, KHÔNG lưu plaintext
+    created_at    TEXT NOT NULL     -- ISO 8601
+);
+```
+
+**Index**:
+```sql
+CREATE UNIQUE INDEX idx_users_username ON users(username);
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+```
+
+**Notes**:
+- `password_hash`: dùng `bcrypt` (passlib), KHÔNG dùng plaintext hay MD5/SHA
+- Không có bảng `sessions` — JWT là stateless, không lưu token vào DB
+- Tất cả các bảng khác (videos, batches, segments, notifications, activity_log) **không cần** thêm `user_id` — mọi user login đều thấy chung data (theo yêu cầu demo, không phân quyền theo data)
+
+---
+
+## Quan hệ (cập nhật cuối)
+
+```
+users (độc lập — không FK với bảng nào khác)
+
+batches (1) ──── (N) videos
+videos  (1) ──── (1) processing_jobs
+videos  (1) ──── (N) anomaly_segments
+videos  (1) ──── (N) activity_log
+videos  (1) ──── (N) notifications
+```

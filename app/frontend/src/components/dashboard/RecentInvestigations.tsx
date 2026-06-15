@@ -95,7 +95,7 @@ export function RecentInvestigations({
       className="overflow-hidden rounded-xl bg-white"
       style={{
         boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.05)',
-        outline: '1px rgba(195, 198, 215, 0.30) solid',
+        outline: '1px #C3C6D7 solid',
         outlineOffset: '-1px',
         borderRadius: 12,
       }}
@@ -105,7 +105,7 @@ export function RecentInvestigations({
         className="flex flex-col gap-4 bg-white lg:flex-row lg:items-center lg:justify-between"
         style={{
           padding: 32,
-          borderBottom: '1px rgba(195, 198, 215, 0.30) solid',
+          borderBottom: '1px #C3C6D7 solid',
         }}
       >
         <div>
@@ -125,7 +125,7 @@ export function RecentInvestigations({
               paddingRight: 16,
               paddingTop: 8,
               paddingBottom: 8,
-              outline: '1px rgba(195, 198, 215, 0.30) solid',
+              outline: '1px #C3C6D7 solid',
               outlineOffset: '-1px',
               gap: 8,
               fontSize: 14,
@@ -146,7 +146,7 @@ export function RecentInvestigations({
               paddingRight: 16,
               paddingTop: 8,
               paddingBottom: 8,
-              outline: '1px rgba(195, 198, 215, 0.30) solid',
+              outline: '1px #C3C6D7 solid',
               outlineOffset: '-1px',
               gap: 8,
               fontSize: 14,
@@ -154,7 +154,10 @@ export function RecentInvestigations({
               lineHeight: '20px',
               color: '#131B2E',
             }}
-            onClick={onExportData}
+            onClick={(event) => {
+              event.stopPropagation()
+              onExportData()
+            }}
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Export Data
@@ -271,7 +274,7 @@ export function RecentInvestigations({
                   <tr
                     key={item.video_id}
                     className="cursor-pointer hover:bg-gray-50"
-                    style={{ borderTop: '1px rgba(195, 198, 215, 0.30) solid' }}
+                    style={{ borderTop: '1px #C3C6D7 solid' }}
                     onClick={() => onRowClick(item.video_id)}
                   >
                     {/* Video Name */}
@@ -441,7 +444,7 @@ export function RecentInvestigations({
           style={{
             padding: 16,
             background: 'rgba(242, 243, 255, 0.20)',
-            borderTop: '1px rgba(195, 198, 215, 0.30) solid',
+            borderTop: '1px #C3C6D7 solid',
           }}
         >
           <button

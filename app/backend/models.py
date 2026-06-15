@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Index, Integer, Text
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import REAL
 
@@ -110,3 +110,31 @@ class ActivityLog(Base):
     created_at = Column(Text, nullable=False)
 
     video = relationship("Video", back_populates="activity_logs")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    target_url = Column(String, nullable=True)
+    video_id = Column(String, ForeignKey("videos.id"), nullable=True)
+    is_read = Column(Integer, nullable=False, default=0)
+    created_at = Column(String, nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        Index("idx_users_username", "username", unique=True),
+        Index("idx_users_email", "email", unique=True),
+        {"sqlite_autoincrement": True},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(Text, nullable=False, unique=True)
+    email = Column(Text, nullable=False, unique=True)
+    password_hash = Column(Text, nullable=False)
+    created_at = Column(Text, nullable=False)

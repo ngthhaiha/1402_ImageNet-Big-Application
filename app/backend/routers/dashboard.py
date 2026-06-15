@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import get_args
 
 from fastapi import APIRouter, Depends, Query
@@ -7,8 +7,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Query as SqlAlchemyQuery
 from sqlalchemy.orm import Session
 
+from backend.auth import get_current_user
 from backend.database import get_db
-from backend.models import ActivityLog, AnomalySegment, Video
+from backend.models import ActivityLog, AnomalySegment, User, Video
+from backend.segment_groups import SegmentGroup, group_segment_rows
 from backend.schemas import (
     AnomalyLabel,
     ApiResponse,
@@ -19,6 +21,7 @@ from backend.schemas import (
     DashboardStatsRead,
     DashboardTopDetectionRead,
 )
+from backend.utils import VIETNAM_TIMEZONE, vietnam_now
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -34,7 +37,10 @@ def _api_error(message: str, status_code: int = 400) -> JSONResponse:
 
 
 @router.get("/stats", response_model=ApiResponse[DashboardStatsRead])
-def get_dashboard_stats(db: Session = Depends(get_db)) -> ApiResponse[DashboardStatsRead]:
+def get_dashboard_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[DashboardStatsRead]:
     stats = DashboardStatsRead(
         total_videos=db.query(Video).count(),
         total_anomalies=(
@@ -61,6 +67,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)) -> ApiResponse[DashboardS
 
 @router.get("/distribution", response_model=ApiResponse[list[DashboardDistributionRead]])
 def get_dashboard_distribution(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[DashboardDistributionRead]]:
     rows = (
@@ -92,6 +99,7 @@ def get_dashboard_recent_alerts(
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
     limit: int = Query(default=10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[DashboardAlertRead]] | JSONResponse:
     selected_class = _normalize_anomaly_class(anomaly_class)
@@ -108,22 +116,22 @@ def get_dashboard_recent_alerts(
             date_to,
         )
         .order_by(AnomalySegment.created_at.desc(), AnomalySegment.id.desc())
-        .limit(limit)
         .all()
     )
+    groups = _sort_groups(group_segment_rows(rows))[:limit]
     alerts = [
         DashboardAlertRead(
-            id=segment.id,
-            video_id=video.id,
-            time=_format_clock_time(segment.created_at),
-            activity_type=segment.predicted_class,
-            confidence=segment.confidence_score,
-            anomaly_score=segment.anomaly_score,
-            severity=_get_severity(segment.anomaly_score),
-            review_status=segment.review_status,
-            is_correct=_to_bool_or_none(segment.is_correct),
+            id=group.id,
+            video_id=group.video.id,
+            time=_format_clock_time(group.created_at),
+            activity_type=group.activity_type,
+            confidence=group.confidence_score,
+            anomaly_score=group.anomaly_score,
+            severity=_get_severity(group.anomaly_score),
+            review_status=group.review_status,
+            is_correct=group.is_correct,
         )
-        for segment, video in rows
+        for group in groups
     ]
     return ApiResponse(success=True, data=alerts, message="Dashboard recent alerts loaded")
 
@@ -134,6 +142,7 @@ def get_dashboard_top_detections(
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
     limit: int = Query(default=6, ge=1, le=15),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[DashboardTopDetectionRead]] | JSONResponse:
     selected_class = _normalize_anomaly_class(anomaly_class)
@@ -178,6 +187,7 @@ def get_dashboard_recent_investigations(
     date_to: str | None = Query(default=None),
     limit: int = Query(default=5, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[DashboardInvestigationRead]] | JSONResponse:
     selected_class = _normalize_anomaly_class(anomaly_class)
@@ -246,6 +256,7 @@ def get_dashboard_recent_investigations(
 @router.get("/recent-activity", response_model=ApiResponse[list[DashboardActivityRead]])
 def get_dashboard_recent_activity(
     limit: int = Query(default=5, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[DashboardActivityRead]]:
     rows = (
@@ -329,6 +340,14 @@ def _get_severity(anomaly_score: float) -> str:
     return "LOW"
 
 
+def _sort_groups(groups: list[SegmentGroup]) -> list[SegmentGroup]:
+    return sorted(
+        groups,
+        key=lambda group: (group.created_at, group.sort_id),
+        reverse=True,
+    )
+
+
 def _get_investigation_status(segments: list[AnomalySegment]) -> str:
     if any(segment.review_status == "PENDING_REVIEW" for segment in segments):
         return "HIGH ALERT"
@@ -347,7 +366,7 @@ def _parse_timestamp(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value)
         if parsed.tzinfo is not None:
-            return parsed.replace(tzinfo=None)
+            return parsed.astimezone(VIETNAM_TIMEZONE).replace(tzinfo=None)
         return parsed
     except ValueError:
         return datetime.min
@@ -357,4 +376,13 @@ def _format_clock_time(value: str) -> str:
     parsed = _parse_timestamp(value)
     if parsed == datetime.min:
         return value
-    return parsed.strftime("%H:%M:%S")
+
+    today = vietnam_now().date()
+    parsed_date = parsed.date()
+    if parsed_date == today:
+        return parsed.strftime("%H:%M")
+    if parsed_date == today - timedelta(days=1):
+        return f"Yesterday {parsed.strftime('%H:%M')}"
+    if parsed_date.year == today.year:
+        return parsed.strftime("%m/%d %H:%M")
+    return parsed.strftime("%Y/%m/%d %H:%M")

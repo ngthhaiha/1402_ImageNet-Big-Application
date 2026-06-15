@@ -11,6 +11,18 @@ interface SegmentsTableProps {
   videoRef: RefObject<HTMLVideoElement | null>
 }
 
+interface SegmentGroup {
+  key: string
+  segments: AnomalySegment[]
+  start_time: number
+  end_time: number
+  predicted_class: AnomalyLabel
+  confidence_score: number
+  review_status: ReviewStatus | 'MIXED'
+}
+
+const ADJACENT_SEGMENT_GAP_SECONDS = 1
+
 const REVIEW_STATUS_META: Record<ReviewStatus, { label: string; dotClassName: string }> = {
   PENDING_REVIEW: { label: 'Pending Review', dotClassName: 'bg-[#737686]' },
   LABEL_CORRECT: { label: 'Label Correct', dotClassName: 'bg-emerald-500' },
@@ -27,6 +39,61 @@ function formatTime(seconds: number): string {
 
 function formatConfidence(score: number): string {
   return `${(score * 100).toFixed(1)}%`
+}
+
+function getAverageConfidence(segments: AnomalySegment[]): number {
+  const total = segments.reduce((sum, segment) => sum + segment.confidence_score, 0)
+  return total / segments.length
+}
+
+function getGroupReviewStatus(segments: AnomalySegment[]): SegmentGroup['review_status'] {
+  const firstStatus = segments[0].review_status
+  const allSameStatus = segments.every((segment) => segment.review_status === firstStatus)
+  return allSameStatus ? firstStatus : 'MIXED'
+}
+
+function toSegmentGroup(groupSegments: AnomalySegment[]): SegmentGroup {
+  const firstSegment = groupSegments[0]
+  const lastSegment = groupSegments[groupSegments.length - 1]
+
+  return {
+    key: groupSegments.map((segment) => segment.id).join('-'),
+    segments: groupSegments,
+    start_time: firstSegment.start_time,
+    end_time: lastSegment.end_time,
+    predicted_class: firstSegment.predicted_class,
+    confidence_score: getAverageConfidence(groupSegments),
+    review_status: getGroupReviewStatus(groupSegments),
+  }
+}
+
+function groupAdjacentSegments(segments: AnomalySegment[]): SegmentGroup[] {
+  const sortedSegments = [...segments].sort((left, right) => {
+    if (left.start_time !== right.start_time) {
+      return left.start_time - right.start_time
+    }
+
+    return left.segment_index - right.segment_index
+  })
+  const groups: AnomalySegment[][] = []
+
+  sortedSegments.forEach((segment) => {
+    const lastGroup = groups[groups.length - 1]
+    const lastSegment = lastGroup?.[lastGroup.length - 1]
+    const isSameActivity = lastSegment?.predicted_class === segment.predicted_class
+    const isTimeAdjacent =
+      lastSegment !== undefined &&
+      segment.start_time - lastSegment.end_time <= ADJACENT_SEGMENT_GAP_SECONDS
+
+    if (lastSegment && isSameActivity && isTimeAdjacent) {
+      lastGroup.push(segment)
+      return
+    }
+
+    groups.push([segment])
+  })
+
+  return groups.map(toSegmentGroup)
 }
 
 function ActivityBadge({ label }: { label: AnomalyLabel }) {
@@ -52,6 +119,19 @@ function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
   )
 }
 
+function GroupReviewStatusBadge({ status }: { status: SegmentGroup['review_status'] }) {
+  if (status !== 'MIXED') {
+    return <ReviewStatusBadge status={status} />
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-[#F2F3FF] px-2.5 py-1 text-xs font-medium text-[#434655]">
+      <span className="h-2 w-2 rounded-full bg-[#004AC6]" aria-hidden="true" />
+      Mixed Review
+    </span>
+  )
+}
+
 export function SegmentsTable({
   video,
   segments,
@@ -63,11 +143,17 @@ export function SegmentsTable({
     return null
   }
 
+  const segmentGroups = groupAdjacentSegments(segments)
+
   function seekToSegment(segment: AnomalySegment) {
     setSelectedSegmentId(segment.id)
     if (videoRef.current) {
       videoRef.current.currentTime = segment.start_time
     }
+  }
+
+  function seekToGroup(group: SegmentGroup) {
+    seekToSegment(group.segments[0])
   }
 
   return (
@@ -103,27 +189,39 @@ export function SegmentsTable({
             </tr>
           </thead>
           <tbody>
-            {segments.length > 0 ? (
-              segments.map((segment) => (
+            {segmentGroups.length > 0 ? (
+              segmentGroups.map((group) => (
                 <tr
-                  key={segment.id}
+                  key={group.key}
+                  id={`segment-row-${group.segments[0].id}`}
                   className={[
                     'cursor-pointer border-b border-[#C3C6D7] transition hover:bg-slate-100 last:border-b-0',
-                    selectedSegmentId === segment.id ? 'bg-[#F2F3FF]' : '',
+                    selectedSegmentId !== null &&
+                    group.segments.some((segment) => segment.id === selectedSegmentId)
+                      ? 'bg-[#F2F3FF]'
+                      : '',
                   ].join(' ')}
-                  onClick={() => seekToSegment(segment)}
+                  onClick={() => seekToGroup(group)}
                 >
                   <td className="px-6 py-4 text-sm font-medium text-[#131B2E]">
-                    {formatTime(segment.start_time)} - {formatTime(segment.end_time)}
+                    {group.segments.slice(1).map((segment) => (
+                      <span
+                        key={segment.id}
+                        id={`segment-row-${segment.id}`}
+                        style={{ display: 'inline-block', width: 0, height: 0, overflow: 'hidden' }}
+                        aria-hidden="true"
+                      />
+                    ))}
+                    {formatTime(group.start_time)} - {formatTime(group.end_time)}
                   </td>
                   <td className="px-6 py-4">
-                    <ActivityBadge label={segment.predicted_class} />
+                    <ActivityBadge label={group.predicted_class} />
                   </td>
                   <td className="px-6 py-4 text-sm font-bold text-[#131B2E]">
-                    {formatConfidence(segment.confidence_score)}
+                    {formatConfidence(group.confidence_score)}
                   </td>
                   <td className="px-6 py-4">
-                    <ReviewStatusBadge status={segment.review_status} />
+                    <GroupReviewStatusBadge status={group.review_status} />
                   </td>
                 </tr>
               ))

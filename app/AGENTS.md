@@ -24,18 +24,23 @@ project/
 ├── backend/
 │   ├── main.py              # FastAPI app, routes, CORS, static files
 │   ├── database.py          # SQLAlchemy setup, get_db()
-│   ├── models.py            # SQLAlchemy ORM models (Video, Batch, ProcessingJob, AnomalySegment)
+│   ├── models.py            # SQLAlchemy ORM models (Video, Batch, ProcessingJob, AnomalySegment, User, ...)
 │   ├── schemas.py           # Pydantic schemas (request/response)
 │   ├── worker.py            # AI pipeline worker, poll job queue, ghi vào SQLite
 │   ├── utils.py             # generate_video_id(), generate_batch_id(), format_time()
+│   ├── auth.py               # JWT encode/decode, password hash, get_current_user dependency
+│   ├── routers/
+│   │   └── auth.py           # POST /api/auth/register, /login, GET /api/auth/me
 │   └── uploads/             # Thư mục lưu video
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/           # Upload.tsx, Queue.tsx, VideoDetail.tsx, Dashboard.tsx
-│   │   │                    # Alerts.tsx (placeholder), Profile.tsx (placeholder)
+│   │   ├── pages/           # Upload.tsx, Queue.tsx, VideoDetail.tsx, Dashboard.tsx,
+│   │   │                    # Alerts.tsx, Profile.tsx, Login.tsx, Register.tsx
 │   │   ├── components/      # StatusBadge, Toast, Sidebar, Timeline,
-│   │   │                    # SegmentsTable, InvestigationPanel, FeedbackPanel
-│   │   ├── api/             # api.ts — tất cả axios/fetch calls
+│   │   │                    # SegmentsTable, InvestigationPanel, FeedbackPanel,
+│   │   │                    # ProtectedRoute.tsx
+│   │   ├── context/         # NotificationContext.tsx, AuthContext.tsx
+│   │   ├── api/             # api.ts — tất cả axios/fetch calls (kèm interceptor JWT)
 │   │   └── types/           # types.ts — TypeScript interfaces
 │   └── ...
 ├── REQUIREMENTS.md
@@ -56,6 +61,23 @@ project/
 - CORS: allow all origins (demo, không có production)
 - Static files: mount `uploads/` tại `/uploads`
 - Không dùng async SQLAlchemy — dùng sync thông thường với `get_db()` dependency
+
+### Authentication (JWT)
+- File `backend/auth.py` chứa:
+  - `hash_password(password: str) -> str` (dùng `passlib` bcrypt)
+  - `verify_password(password: str, hashed: str) -> bool`
+  - `create_access_token(data: dict) -> str` (dùng `python-jose`, exp = 7 ngày)
+  - `get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_db)) -> User` — dependency dùng cho mọi protected route
+- `JWT_SECRET_KEY` đọc từ `.env`, KHÔNG hardcode trong code
+- Tất cả routes trong `routers/` (trừ `routers/auth.py`) thêm dependency:
+  ```python
+  @router.get("/...")
+  def some_route(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+      ...
+  ```
+- `routers/auth.py`: `/register`, `/login` KHÔNG cần `get_current_user`. `/me` cần.
+- Static file serving (`/uploads/...`) KHÔNG cần auth (video player cần load trực tiếp)
+- 401 response khi token invalid/expired — FastAPI tự raise qua `HTTPException(401)`
 
 ### Database
 - Dùng SQLAlchemy với SQLite, file `backend/anomaly.db`
@@ -120,6 +142,23 @@ Lỗi:
 - Dùng `axios` (không dùng fetch raw)
 - Base URL đọc từ env: `VITE_API_URL` (default: `http://localhost:8000`)
 - Không hardcode URL trong component
+- **Axios interceptor** (request): tự động thêm header `Authorization: Bearer {token}` từ `localStorage.getItem('token')` vào mọi request
+- **Axios interceptor** (response): nếu response status = 401 → xóa token khỏi `localStorage`, redirect `/login`
+
+### Authentication (Frontend)
+- `context/AuthContext.tsx`: Provider quản lý `user`, `token`, `login()`, `register()`, `logout()`
+- `components/ProtectedRoute.tsx`: wrapper component, kiểm tra `localStorage.getItem('token')`
+  - Không có token → `<Navigate to="/login" replace />`
+  - Có token → render children
+- Routing trong `App.tsx`:
+  ```tsx
+  <Route path="/login" element={<Login />} />
+  <Route path="/register" element={<Register />} />
+  <Route path="/" element={<ProtectedRoute><Upload /></ProtectedRoute>} />
+  // ... tất cả routes khác wrap tương tự
+  ```
+- `/login` và `/register` KHÔNG có Sidebar/Header — layout riêng, centered form
+- Logout: gọi `logout()` từ AuthContext → xóa token → `navigate('/login', {replace: true})`
 
 ### State Management
 - Dùng React built-in hooks (useState, useEffect) — không cần Redux hay Zustand
@@ -145,7 +184,6 @@ Lỗi:
 
 ## Những điều AI KHÔNG được làm
 
-- ❌ Không thêm authentication / login
 - ❌ Không thêm bảng mới vào database khi chưa có trong SCHEMA
 - ❌ Không cài thêm package nếu chưa thảo luận
 - ❌ Không thêm màn hình mới ngoài các màn hình trong UI_FLOW.md
@@ -155,6 +193,8 @@ Lỗi:
 - ❌ Không tự thêm labels ngoài 15 labels đã liệt kê trong REQUIREMENTS.md
 - ❌ Không implement xử lý song song nhiều video (concurrency phải = 1)
 - ❌ Không tự generate seed data phức tạp — chỉ tạo nếu task yêu cầu
+- ❌ Không thêm phân quyền theo role hoặc OAuth — chỉ Register/Login JWT đơn giản theo FR12
+- ❌ Không thêm `user_id` vào các bảng videos/segments/... — mọi user thấy chung data
 
 ## Anomaly Labels (15 options — không thay đổi)
 

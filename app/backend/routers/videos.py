@@ -12,8 +12,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from backend.auth import get_current_user
 from backend.database import DATABASE_PATH, get_db
-from backend.models import ActivityLog, AnomalySegment, Batch, ProcessingJob, Video
+from backend.models import ActivityLog, AnomalySegment, Batch, ProcessingJob, User, Video
 from backend.schemas import (
     AnomalySegmentRead,
     ApiResponse,
@@ -56,6 +57,21 @@ def _get_upload_size(file: UploadFile) -> int:
     size = file.file.tell()
     file.file.seek(current_position)
     return size
+
+
+def _safe_unlink(path: Path) -> None:
+    for attempt in range(3):
+        try:
+            path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt == 2:
+                return
+            sleep(0.1)
+        except OSError:
+            return
 
 
 def _read_video_duration(video_path: Path) -> float:
@@ -120,7 +136,10 @@ def _start_worker_loop_if_available(db_path: str) -> None:
 
 
 @router.get("", response_model=ApiResponse[list[VideoRead]])
-def list_videos(db: Session = Depends(get_db)) -> ApiResponse[list[VideoRead]]:
+def list_videos(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[list[VideoRead]]:
     videos = db.query(Video).order_by(Video.created_at.desc()).all()
     return ApiResponse(
         success=True,
@@ -137,6 +156,7 @@ def upload_videos(
     descriptions: Annotated[list[str] | None, Form()] = None,
     locations: Annotated[list[str] | None, Form()] = None,
     durations: Annotated[list[float] | None, Form()] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[UploadBatchRead] | JSONResponse:
     if not files:
@@ -236,19 +256,19 @@ def upload_videos(
         db.rollback()
         for path in saved_paths:
             if path.exists():
-                path.unlink()
+                _safe_unlink(path)
         return _api_error(str(exc), status_code=400)
     except VideoDurationError as exc:
         db.rollback()
         for path in saved_paths:
             if path.exists():
-                path.unlink()
+                _safe_unlink(path)
         return _api_error(f"Could not read video duration: {exc}", status_code=400)
     except (OSError, SQLAlchemyError) as exc:
         db.rollback()
         for path in saved_paths:
             if path.exists():
-                path.unlink()
+                _safe_unlink(path)
         return _api_error(f"Upload failed: {exc}", status_code=500)
 
     db.refresh(batch)
@@ -270,6 +290,7 @@ def upload_videos(
 @router.post("/probe-duration", response_model=ApiResponse[VideoDurationProbeRead])
 def probe_video_duration(
     file: Annotated[UploadFile, File()],
+    current_user: User = Depends(get_current_user),
 ) -> ApiResponse[VideoDurationProbeRead] | JSONResponse:
     if not file.filename:
         return _api_error("Video file must have a filename")
@@ -297,7 +318,7 @@ def probe_video_duration(
         return _api_error(f"Could not read video duration: {exc}", status_code=500)
     finally:
         if temp_path is not None and temp_path.exists():
-            temp_path.unlink()
+            _safe_unlink(temp_path)
 
     return ApiResponse(
         success=True,
@@ -310,6 +331,7 @@ def probe_video_duration(
 def retry_video(
     video_id: str,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[VideoRead] | JSONResponse:
     video = db.get(Video, video_id)
@@ -352,6 +374,7 @@ def retry_video(
 @router.get("/{video_id}/export")
 def export_video_report(
     video_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     video = db.get(Video, video_id)
@@ -392,6 +415,7 @@ def export_video_report(
 @router.get("/{video_id}", response_model=ApiResponse[VideoDetailRead])
 def get_video_detail(
     video_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[VideoDetailRead] | JSONResponse:
     video = db.get(Video, video_id)
