@@ -37,7 +37,13 @@ export type JobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
 export type ReviewStatus = 'PENDING_REVIEW' | 'LABEL_CORRECT' | 'CORRECTED' | 'LOGGED'
 export type Severity = 'HIGH' | 'MEDIUM' | 'LOW'
-export type InvestigationStatus = 'HIGH ALERT' | 'IN REVIEW' | 'VALIDATED'
+export type DisplayReviewStatus =
+  | 'Unreviewed'
+  | 'Validated'
+  | 'Corrected'
+  | 'Logged'
+  | 'False Positive'
+export type InvestigationStatus = DisplayReviewStatus
 export type DashboardActivityType = 'UPLOAD' | 'REVIEW_COMPLETE' | 'FLAG'
 export type NotificationType = 'success' | 'error' | 'warning' | 'info'
 
@@ -200,7 +206,7 @@ export interface AlertFilter {
   name: string
   activity: string
   severity: '' | Severity
-  status: '' | 'PENDING_REVIEW' | 'REVIEWED'
+  status: '' | 'PENDING_REVIEW' | 'LABEL_CORRECT' | 'CORRECTED' | 'LOGGED' | 'FALSE_POSITIVE'
   date: string
 }
 
@@ -216,7 +222,9 @@ export interface AlertLogItem {
   anomaly_score: number
   severity: Severity
   review_status: ReviewStatus
-  status: 'Unreviewed' | 'Reviewed'
+  is_correct: boolean | null
+  verified_label: AnomalyLabel | null
+  status: DisplayReviewStatus
   created_at: string
 }
 
@@ -238,7 +246,9 @@ export interface CriticalAlertItem {
   confidence_score: number
   anomaly_score: number
   review_status: ReviewStatus
-  status: 'Unreviewed' | 'Reviewed'
+  is_correct: boolean | null
+  verified_label: AnomalyLabel | null
+  status: DisplayReviewStatus
   created_at: string
 }
 
@@ -259,6 +269,7 @@ export interface AlertItem {
   severity: Severity
   review_status: ReviewStatus | 'PROCESSING'
   is_correct: boolean | null
+  verified_label: AnomalyLabel | null
 }
 
 export interface TopDetection {

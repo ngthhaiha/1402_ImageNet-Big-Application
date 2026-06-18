@@ -15,8 +15,15 @@ ProgressStep = Literal[
 JobStatus = Literal["PENDING", "RUNNING", "COMPLETED", "FAILED"]
 ReviewStatus = Literal["PENDING_REVIEW", "LABEL_CORRECT", "CORRECTED", "LOGGED"]
 Severity = Literal["HIGH", "MEDIUM", "LOW"]
-AlertDisplayStatus = Literal["Unreviewed", "Reviewed"]
-InvestigationStatus = Literal["HIGH ALERT", "IN REVIEW", "VALIDATED"]
+DisplayReviewStatus = Literal[
+    "Unreviewed",
+    "Validated",
+    "Corrected",
+    "Logged",
+    "False Positive",
+]
+AlertDisplayStatus = DisplayReviewStatus
+InvestigationStatus = DisplayReviewStatus
 ActivityType = Literal["UPLOAD", "REVIEW_COMPLETE", "FLAG"]
 NotificationType = Literal["success", "error", "warning", "info"]
 AnomalyLabel = Literal[
@@ -187,6 +194,7 @@ class DashboardAlertRead(BaseModel):
     severity: Severity
     review_status: ReviewStatus
     is_correct: bool | None = None
+    verified_label: AnomalyLabel | None = None
 
 
 class DashboardTopDetectionRead(BaseModel):
@@ -273,6 +281,8 @@ class AlertLogItem(BaseModel):
     anomaly_score: float
     severity: Severity
     review_status: ReviewStatus
+    is_correct: bool | None = None
+    verified_label: AnomalyLabel | None = None
     status: AlertDisplayStatus
     created_at: str
 
@@ -301,5 +311,7 @@ class CriticalAlertItem(BaseModel):
     confidence_score: float
     anomaly_score: float
     review_status: ReviewStatus
+    is_correct: bool | None = None
+    verified_label: AnomalyLabel | None = None
     status: AlertDisplayStatus
     created_at: str

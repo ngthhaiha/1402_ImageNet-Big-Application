@@ -174,8 +174,20 @@ def _apply_log_filters(
         query = _apply_severity_filter(query, severity)
     if status == "PENDING_REVIEW":
         query = query.filter(AnomalySegment.feedback_submitted_at.is_(None))
-    elif status == "REVIEWED":
-        query = query.filter(AnomalySegment.feedback_submitted_at.is_not(None))
+    elif status == "LABEL_CORRECT":
+        query = query.filter(AnomalySegment.review_status == "LABEL_CORRECT")
+    elif status == "CORRECTED":
+        query = query.filter(
+            AnomalySegment.review_status == "CORRECTED",
+            AnomalySegment.verified_label != "Normal",
+        )
+    elif status == "LOGGED":
+        query = query.filter(AnomalySegment.review_status == "LOGGED")
+    elif status == "FALSE_POSITIVE":
+        query = query.filter(
+            (AnomalySegment.is_correct == 0)
+            | (AnomalySegment.verified_label == "Normal")
+        )
     if alert_date is not None and alert_date.strip() != "":
         query = query.filter(func.date(AnomalySegment.created_at) == alert_date.strip())
     return query
@@ -215,8 +227,14 @@ def _normalize_status(value: str | None) -> str | None | bool:
     normalized = value.upper()
     if normalized in {"PENDING_REVIEW", "UNREVIEWED", "PENDING"}:
         return "PENDING_REVIEW"
-    if normalized in {"REVIEWED", "LABEL_CORRECT", "CORRECTED", "LOGGED"}:
-        return "REVIEWED"
+    if normalized in {"LABEL_CORRECT", "VALIDATED"}:
+        return "LABEL_CORRECT"
+    if normalized == "CORRECTED":
+        return "CORRECTED"
+    if normalized == "LOGGED":
+        return "LOGGED"
+    if normalized in {"FALSE_POSITIVE", "FALSE POSITIVE"}:
+        return "FALSE_POSITIVE"
     return False
 
 
@@ -243,7 +261,13 @@ def _to_alert_log_item(group: SegmentGroup) -> AlertLogItem:
         anomaly_score=group.anomaly_score,
         severity=_get_severity(group.anomaly_score),
         review_status=group.review_status,
-        status=_get_display_status(group.review_status),
+        is_correct=group.is_correct,
+        verified_label=group.verified_label,
+        status=_get_display_status(
+            group.review_status,
+            group.is_correct,
+            group.verified_label,
+        ),
         created_at=group.created_at,
     )
 
@@ -262,7 +286,13 @@ def _to_critical_alert_item(group: SegmentGroup) -> CriticalAlertItem:
         confidence_score=group.confidence_score,
         anomaly_score=group.anomaly_score,
         review_status=group.review_status,
-        status=_get_display_status(group.review_status),
+        is_correct=group.is_correct,
+        verified_label=group.verified_label,
+        status=_get_display_status(
+            group.review_status,
+            group.is_correct,
+            group.verified_label,
+        ),
         created_at=group.created_at,
     )
 
@@ -275,10 +305,22 @@ def _get_severity(anomaly_score: float) -> str:
     return "LOW"
 
 
-def _get_display_status(review_status: str) -> str:
+def _get_display_status(
+    review_status: str,
+    is_correct: bool | None,
+    verified_label: str | None,
+) -> str:
     if review_status == "PENDING_REVIEW":
         return "Unreviewed"
-    return "Reviewed"
+    if review_status == "LABEL_CORRECT":
+        return "Validated"
+    if review_status == "LOGGED":
+        return "Logged"
+    if review_status == "CORRECTED" and verified_label != "Normal":
+        return "Corrected"
+    if is_correct is False or verified_label == "Normal":
+        return "False Positive"
+    return "Unreviewed"
 
 
 def _parse_timestamp(value: str) -> datetime:

@@ -1,14 +1,10 @@
-import type { AlertItem, ReviewStatus, Severity } from '../../types/types'
+import type { AlertItem, Severity } from '../../types/types'
+import { getReviewStatusDisplay } from '../../utils/reviewStatus'
 
 interface RecentAlertsProps {
   items: AlertItem[]
   onRowClick: (videoId: string) => void
   onViewAll: () => void
-}
-
-interface StatusDisplay {
-  text: string
-  badgeClass: string
 }
 
 const SEVERITY_CLASS: Record<Severity, string> = {
@@ -19,51 +15,6 @@ const SEVERITY_CLASS: Record<Severity, string> = {
 
 function formatConfidence(value: number): string {
   return `${(value * 100).toFixed(1)}%`
-}
-
-function getStatusDisplay(
-  reviewStatus: ReviewStatus | 'PROCESSING',
-  isCorrect: boolean | null,
-): StatusDisplay {
-  if (reviewStatus === 'PENDING_REVIEW') {
-    return {
-      text: 'Unreviewed',
-      badgeClass: 'alert-status-unreviewed',
-    }
-  }
-
-  if (reviewStatus === 'LABEL_CORRECT') {
-    return {
-      text: 'Validated',
-      badgeClass: 'alert-status-validated',
-    }
-  }
-
-  if (reviewStatus === 'CORRECTED' && isCorrect === false) {
-    return {
-      text: 'False Positive',
-      badgeClass: 'alert-status-muted',
-    }
-  }
-
-  if (reviewStatus === 'CORRECTED') {
-    return {
-      text: 'Corrected',
-      badgeClass: 'alert-status-primary',
-    }
-  }
-
-  if (reviewStatus === 'LOGGED') {
-    return {
-      text: 'Logged',
-      badgeClass: 'alert-status-primary',
-    }
-  }
-
-  return {
-    text: 'Processing',
-    badgeClass: 'alert-status-muted',
-  }
 }
 
 export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps) {
@@ -176,7 +127,11 @@ export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps
           <tbody>
             {visibleItems.length > 0 ? (
               visibleItems.map((item) => {
-                const status = getStatusDisplay(item.review_status, item.is_correct)
+                const status = getReviewStatusDisplay(
+                  item.review_status,
+                  item.is_correct,
+                  item.verified_label,
+                )
                 return (
                   <tr
                     key={item.id}
@@ -204,7 +159,7 @@ export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps
                       <span
                         className={`dashboard-alert-badge ${status.badgeClass}`}
                       >
-                        {status.text}
+                        {status.label}
                       </span>
                     </td>
                   </tr>

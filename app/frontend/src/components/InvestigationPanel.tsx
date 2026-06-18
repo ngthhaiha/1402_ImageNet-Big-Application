@@ -1,4 +1,5 @@
-import type { AnomalySegment, ReviewStatus } from '../types/types'
+import type { AnomalySegment } from '../types/types'
+import { getReviewStatusDisplay } from '../utils/reviewStatus'
 
 interface InvestigationPanelSegment extends AnomalySegment {
   video_name: string
@@ -6,13 +7,6 @@ interface InvestigationPanelSegment extends AnomalySegment {
 
 interface InvestigationPanelProps {
   segment: InvestigationPanelSegment | null
-}
-
-const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
-  PENDING_REVIEW: 'Pending Review',
-  LABEL_CORRECT: 'Label Correct',
-  CORRECTED: 'Corrected',
-  LOGGED: 'Logged',
 }
 
 function formatTime(seconds: number): string {
@@ -32,6 +26,14 @@ function getPercentClass(score: number): string {
 }
 
 export function InvestigationPanel({ segment }: InvestigationPanelProps) {
+  const status = segment
+    ? getReviewStatusDisplay(
+        segment.review_status,
+        segment.is_correct,
+        segment.verified_label,
+      )
+    : null
+
   return (
     <section className="rounded-xl border border-[#C3C6D7] bg-white p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#C3C6D7] pb-4">
@@ -78,7 +80,7 @@ export function InvestigationPanel({ segment }: InvestigationPanelProps) {
           <div className="flex items-center justify-between gap-4">
             <span className="text-xs font-medium text-[#737686]">Status</span>
             <span className="rounded-full bg-[#F2F3FF] px-2.5 py-1 text-xs font-medium text-[#434655]">
-              {REVIEW_STATUS_LABEL[segment.review_status]}
+              {status?.label}
             </span>
           </div>
         </div>

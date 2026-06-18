@@ -1,6 +1,7 @@
 import { AlertTriangle } from 'lucide-react'
 
-import type { CriticalAlertItem, ReviewStatus } from '../../types/types'
+import type { CriticalAlertItem } from '../../types/types'
+import { getReviewStatusDisplay } from '../../utils/reviewStatus'
 
 interface CriticalAlertsTableProps {
   items: CriticalAlertItem[]
@@ -9,10 +10,6 @@ interface CriticalAlertsTableProps {
 
 function formatConfidence(score: number): string {
   return `${(score * 100).toFixed(1)}%`
-}
-
-function isPending(status: ReviewStatus): boolean {
-  return status === 'PENDING_REVIEW'
 }
 
 export function CriticalAlertsTable({
@@ -44,7 +41,12 @@ export function CriticalAlertsTable({
           <tbody>
             {criticalItems.length > 0 ? (
               criticalItems.map((item) => {
-                const pending = isPending(item.review_status)
+                const status = getReviewStatusDisplay(
+                  item.review_status,
+                  item.is_correct,
+                  item.verified_label,
+                )
+                const pending = item.review_status === 'PENDING_REVIEW'
                 return (
                   <tr key={item.id}>
                     <td>{item.time}</td>
@@ -60,14 +62,9 @@ export function CriticalAlertsTable({
                       {formatConfidence(item.confidence_score)}
                     </td>
                     <td>
-                      {pending ? (
-                        <span className="alerts-critical-active">
-                          <span aria-hidden="true" />
-                          ACTIVE
-                        </span>
-                      ) : (
-                        <span className="alerts-critical-archived">ARCHIVED</span>
-                      )}
+                      <span className={`dashboard-alert-badge ${status.badgeClass}`}>
+                        {status.label}
+                      </span>
                     </td>
                     <td>
                       <button

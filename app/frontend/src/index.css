@@ -3019,6 +3019,30 @@ a:active {
   background: #004ac6;
 }
 
+.alerts-status.alert-status-validated {
+  color: #059669;
+}
+
+.alerts-status.alert-status-validated span {
+  background: #059669;
+}
+
+.alerts-status.alert-status-primary {
+  color: #004ac6;
+}
+
+.alerts-status.alert-status-primary span {
+  background: #004ac6;
+}
+
+.alerts-status.alert-status-muted {
+  color: #505f76;
+}
+
+.alerts-status.alert-status-muted span {
+  background: #505f76;
+}
+
 .alerts-link-button {
   border: 0;
   background: transparent;

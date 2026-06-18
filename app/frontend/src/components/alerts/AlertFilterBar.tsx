@@ -93,7 +93,10 @@ export function AlertFilterBar({ value, onChange }: AlertFilterBarProps) {
         >
           <option value="">All</option>
           <option value="PENDING_REVIEW">Unreviewed</option>
-          <option value="REVIEWED">Reviewed</option>
+          <option value="LABEL_CORRECT">Validated</option>
+          <option value="CORRECTED">Corrected</option>
+          <option value="LOGGED">Logged</option>
+          <option value="FALSE_POSITIVE">False Positive</option>
         </select>
         <ChevronDown className="alerts-select-icon" aria-hidden="true" />
       </label>

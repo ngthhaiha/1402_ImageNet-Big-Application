@@ -130,6 +130,7 @@ def get_dashboard_recent_alerts(
             severity=_get_severity(group.anomaly_score),
             review_status=group.review_status,
             is_correct=group.is_correct,
+            verified_label=group.verified_label,
         )
         for group in groups
     ]
@@ -350,10 +351,23 @@ def _sort_groups(groups: list[SegmentGroup]) -> list[SegmentGroup]:
 
 def _get_investigation_status(segments: list[AnomalySegment]) -> str:
     if any(segment.review_status == "PENDING_REVIEW" for segment in segments):
-        return "HIGH ALERT"
-    if any(segment.review_status == "CORRECTED" for segment in segments):
-        return "IN REVIEW"
-    return "VALIDATED"
+        return "Unreviewed"
+    if any(segment.review_status == "LOGGED" for segment in segments):
+        return "Logged"
+    if any(
+        segment.review_status == "CORRECTED"
+        and segment.verified_label != "Normal"
+        for segment in segments
+    ):
+        return "Corrected"
+    if any(
+        segment.is_correct == 0 or segment.verified_label == "Normal"
+        for segment in segments
+    ):
+        return "False Positive"
+    if any(segment.review_status == "LABEL_CORRECT" for segment in segments):
+        return "Validated"
+    return "Unreviewed"
 
 
 def _to_bool_or_none(value: int | None) -> bool | None:

@@ -51,6 +51,13 @@ class SegmentGroup:
         return None
 
     @property
+    def verified_label(self) -> str | None:
+        values = {segment.verified_label for segment in self.segments}
+        if len(values) == 1:
+            return values.pop()
+        return None
+
+    @property
     def created_at(self) -> str:
         return max(segment.created_at for segment in self.segments)
 

@@ -1,6 +1,7 @@
 import { Download, SlidersHorizontal } from 'lucide-react'
 
-import type { AlertLogResponse, ReviewStatus, Severity } from '../../types/types'
+import type { AlertLogResponse, Severity } from '../../types/types'
+import { getReviewStatusDisplay } from '../../utils/reviewStatus'
 
 interface AlertLogTableProps {
   data: AlertLogResponse | null
@@ -19,14 +20,6 @@ const SEVERITY_CLASS: Record<Severity, string> = {
 
 function formatConfidence(score: number): string {
   return `${(score * 100).toFixed(1)}%`
-}
-
-function getStatusMeta(status: ReviewStatus): { label: string; className: string } {
-  if (status === 'PENDING_REVIEW') {
-    return { label: 'Unreviewed', className: 'alerts-status-unreviewed' }
-  }
-
-  return { label: 'Reviewed', className: 'alerts-status-reviewed' }
 }
 
 function getPageNumbers(currentPage: number, totalPages: number): number[] {
@@ -81,7 +74,11 @@ export function AlertLogTable({
           <tbody>
             {items.length > 0 ? (
               items.map((item) => {
-                const status = getStatusMeta(item.review_status)
+                const status = getReviewStatusDisplay(
+                  item.review_status,
+                  item.is_correct,
+                  item.verified_label,
+                )
                 return (
                   <tr key={item.id}>
                     <td>{item.time}</td>
@@ -98,8 +95,7 @@ export function AlertLogTable({
                       </span>
                     </td>
                     <td>
-                      <span className={`alerts-status ${status.className}`}>
-                        <span aria-hidden="true" />
+                      <span className={`dashboard-alert-badge ${status.badgeClass}`}>
                         {status.label}
                       </span>
                     </td>

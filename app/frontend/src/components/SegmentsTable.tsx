@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 import { Download, Filter } from 'lucide-react'
 
 import type { AnomalyLabel, AnomalySegment, ReviewStatus, Video } from '../types/types'
+import { getReviewStatusDisplay } from '../utils/reviewStatus'
 
 interface SegmentsTableProps {
   video: Video
@@ -19,16 +20,11 @@ interface SegmentGroup {
   predicted_class: AnomalyLabel
   confidence_score: number
   review_status: ReviewStatus | 'MIXED'
+  is_correct: number | null
+  verified_label: AnomalyLabel | null
 }
 
 const ADJACENT_SEGMENT_GAP_SECONDS = 1
-
-const REVIEW_STATUS_META: Record<ReviewStatus, { label: string; dotClassName: string }> = {
-  PENDING_REVIEW: { label: 'Pending Review', dotClassName: 'bg-[#737686]' },
-  LABEL_CORRECT: { label: 'Label Correct', dotClassName: 'bg-emerald-500' },
-  CORRECTED: { label: 'Corrected', dotClassName: 'bg-orange-500' },
-  LOGGED: { label: 'Logged', dotClassName: 'bg-[#BA1A1A]' },
-}
 
 function formatTime(seconds: number): string {
   const rounded = Math.max(0, Math.round(seconds))
@@ -52,6 +48,16 @@ function getGroupReviewStatus(segments: AnomalySegment[]): SegmentGroup['review_
   return allSameStatus ? firstStatus : 'MIXED'
 }
 
+function getGroupIsCorrect(segments: AnomalySegment[]): number | null {
+  const values = new Set(segments.map((segment) => segment.is_correct))
+  return values.size === 1 ? segments[0].is_correct : null
+}
+
+function getGroupVerifiedLabel(segments: AnomalySegment[]): AnomalyLabel | null {
+  const values = new Set(segments.map((segment) => segment.verified_label))
+  return values.size === 1 ? segments[0].verified_label : null
+}
+
 function toSegmentGroup(groupSegments: AnomalySegment[]): SegmentGroup {
   const firstSegment = groupSegments[0]
   const lastSegment = groupSegments[groupSegments.length - 1]
@@ -64,6 +70,8 @@ function toSegmentGroup(groupSegments: AnomalySegment[]): SegmentGroup {
     predicted_class: firstSegment.predicted_class,
     confidence_score: getAverageConfidence(groupSegments),
     review_status: getGroupReviewStatus(groupSegments),
+    is_correct: getGroupIsCorrect(groupSegments),
+    verified_label: getGroupVerifiedLabel(groupSegments),
   }
 }
 
@@ -109,8 +117,16 @@ function ActivityBadge({ label }: { label: AnomalyLabel }) {
   )
 }
 
-function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
-  const meta = REVIEW_STATUS_META[status]
+function ReviewStatusBadge({
+  status,
+  isCorrect,
+  verifiedLabel,
+}: {
+  status: ReviewStatus
+  isCorrect: number | null
+  verifiedLabel: AnomalyLabel | null
+}) {
+  const meta = getReviewStatusDisplay(status, isCorrect, verifiedLabel)
   return (
     <span className="inline-flex items-center gap-2 rounded-full bg-[#F2F3FF] px-2.5 py-1 text-xs font-medium text-[#434655]">
       <span className={`h-2 w-2 rounded-full ${meta.dotClassName}`} aria-hidden="true" />
@@ -119,9 +135,15 @@ function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
   )
 }
 
-function GroupReviewStatusBadge({ status }: { status: SegmentGroup['review_status'] }) {
-  if (status !== 'MIXED') {
-    return <ReviewStatusBadge status={status} />
+function GroupReviewStatusBadge({ group }: { group: SegmentGroup }) {
+  if (group.review_status !== 'MIXED') {
+    return (
+      <ReviewStatusBadge
+        status={group.review_status}
+        isCorrect={group.is_correct}
+        verifiedLabel={group.verified_label}
+      />
+    )
   }
 
   return (
@@ -221,7 +243,7 @@ export function SegmentsTable({
                     {formatConfidence(group.confidence_score)}
                   </td>
                   <td className="px-6 py-4">
-                    <GroupReviewStatusBadge status={group.review_status} />
+                    <GroupReviewStatusBadge group={group} />
                   </td>
                 </tr>
               ))

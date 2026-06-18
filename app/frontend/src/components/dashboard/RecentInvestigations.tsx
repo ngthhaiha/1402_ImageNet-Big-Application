@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { ChevronDown, Download, Filter } from 'lucide-react'
 
 import { getUploadUrl } from '../../api/api'
-import type { InvestigationItem, InvestigationStatus } from '../../types/types'
+import type { DisplayReviewStatus, InvestigationItem } from '../../types/types'
 
 interface RecentInvestigationsProps {
   items: InvestigationItem[]
@@ -29,10 +29,12 @@ const CONFIDENCE_TEXT: Record<ConfidenceSeverity, string> = {
 }
 
 /** Updated status badge colors — VALIDATED uses green per Figma */
-const STATUS_BADGE: Record<InvestigationStatus, { bg: string; text: string }> = {
-  'HIGH ALERT': { bg: 'rgba(186, 26, 26, 0.10)', text: '#BA1A1A' },
-  'IN REVIEW': { bg: 'rgba(80, 95, 118, 0.10)', text: '#505F76' },
-  VALIDATED: { bg: 'rgba(16, 185, 129, 0.10)', text: '#059669' },
+const STATUS_BADGE_CLASS: Record<DisplayReviewStatus, string> = {
+  Unreviewed: 'alert-status-unreviewed',
+  Validated: 'alert-status-validated',
+  Corrected: 'alert-status-primary',
+  Logged: 'alert-status-primary',
+  'False Positive': 'alert-status-muted',
 }
 
 function getConfidenceSeverity(confidence: number): ConfidenceSeverity {
@@ -267,7 +269,7 @@ export function RecentInvestigations({
             {items.length > 0 ? (
               items.map((item) => {
                 const severity = getConfidenceSeverity(item.confidence)
-                const statusStyle = STATUS_BADGE[item.investigation_status]
+                const statusClass = STATUS_BADGE_CLASS[item.investigation_status]
                 const widthPct = Math.min(100, Math.max(0, item.confidence * 100))
                 const previewUrl = item.file_path ? `${getUploadUrl(item.file_path)}#t=0.1` : ''
                 return (
@@ -371,20 +373,7 @@ export function RecentInvestigations({
                     {/* Review Status badge */}
                     <td style={{ paddingLeft: 16, paddingRight: 16 }}>
                       <span
-                        className="inline-flex items-center rounded-full"
-                        style={{
-                          paddingLeft: 10,
-                          paddingRight: 10,
-                          paddingTop: 5,
-                          paddingBottom: 5,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          lineHeight: '12px',
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.5,
-                          background: statusStyle.bg,
-                          color: statusStyle.text,
-                        }}
+                        className={`dashboard-alert-badge ${statusClass}`}
                       >
                         {item.investigation_status}
                       </span>
