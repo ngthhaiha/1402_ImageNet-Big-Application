@@ -9,7 +9,10 @@ interface AlertLogTableProps {
   page: number
   onPageChange: (page: number) => void
   onViewInvestigation: (videoId: string, segmentId: number) => void
-  onComingSoon: () => void
+  onToggleFilter: () => void
+  onExportCsv: () => void
+  isFilterVisible: boolean
+  isExporting: boolean
 }
 
 const SEVERITY_CLASS: Record<Severity, string> = {
@@ -37,7 +40,10 @@ export function AlertLogTable({
   page,
   onPageChange,
   onViewInvestigation,
-  onComingSoon,
+  onToggleFilter,
+  onExportCsv,
+  isFilterVisible,
+  isExporting,
 }: AlertLogTableProps) {
   const items = data?.items ?? []
   const total = data?.total ?? 0
@@ -49,10 +55,22 @@ export function AlertLogTable({
       <div className="alerts-table-title-row">
         <h3>Alert Log</h3>
         <div className="alerts-table-actions">
-          <button type="button" className="alerts-icon-button" aria-label="Filter alert log" onClick={onComingSoon}>
+          <button
+            type="button"
+            className="alerts-icon-button"
+            aria-label={isFilterVisible ? 'Hide alert filters' : 'Show alert filters'}
+            aria-pressed={isFilterVisible}
+            onClick={onToggleFilter}
+          >
             <SlidersHorizontal className="alerts-small-icon" aria-hidden="true" />
           </button>
-          <button type="button" className="alerts-icon-button" aria-label="Download alert log" onClick={onComingSoon}>
+          <button
+            type="button"
+            className="alerts-icon-button"
+            aria-label="Export alert log CSV"
+            onClick={onExportCsv}
+            disabled={isExporting || isLoading || total === 0}
+          >
             <Download className="alerts-small-icon" aria-hidden="true" />
           </button>
         </div>

@@ -18,7 +18,7 @@ function formatConfidence(value: number): string {
 }
 
 export function RecentAlerts({ items, onRowClick, onViewAll }: RecentAlertsProps) {
-  const visibleItems = items.slice(0, 4)
+  const visibleItems = items.slice(0, 5)
 
   return (
     <article className="overflow-hidden rounded-xl border border-[#C3C6D7] bg-white shadow-sm">

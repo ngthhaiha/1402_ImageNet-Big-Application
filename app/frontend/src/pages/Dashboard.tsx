@@ -175,7 +175,7 @@ export function Dashboard() {
       try {
         setError(null)
         const [alertsResponse, topDetectionsResponse, investigationsResponse] = await Promise.all([
-          getDashboardRecentAlerts(filter, 4),
+          getDashboardRecentAlerts(filter, 5),
           getDashboardTopDetections(filter),
           getDashboardRecentInvestigations(filter, INVESTIGATION_PAGE_SIZE + 1, 0),
         ])

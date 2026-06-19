@@ -16,12 +16,24 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { getBatchDetail, getLatestBatch, retryVideo } from '../api/api'
+import { getBatchDetail, getLatestBatch, getVideoDetail, retryVideo } from '../api/api'
 import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
-import type { BatchDetail, ProgressStep, Video, VideoStatus } from '../types/types'
+import type {
+  AnomalyLabel,
+  AnomalySegment,
+  BatchDetail,
+  ProgressStep,
+  ReviewStatus,
+  Video,
+  VideoDetail,
+  VideoStatus,
+} from '../types/types'
+import { getReviewStatusDisplay } from '../utils/reviewStatus'
 
 const ROWS_PER_PAGE = 10
+const ADJACENT_SEGMENT_GAP_SECONDS = 1
+const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 const PROGRESS_STEP_PERCENT: Record<ProgressStep, number> = {
   WAITING: 0,
@@ -49,6 +61,21 @@ interface SummaryCard {
   icon: LucideIcon
   badgeClassName: string
   accentClassName: string
+}
+
+interface QueueReportSegmentGroup {
+  segments: AnomalySegment[]
+  start_time: number
+  end_time: number
+  predicted_class: AnomalyLabel
+  confidence_score: number
+  anomaly_score: number
+  review_status: ReviewStatus | 'MIXED'
+  is_correct: number | null
+  verified_label: AnomalyLabel | null
+  other_description: string | null
+  investigator_comment: string | null
+  feedback_submitted_at: string | null
 }
 
 function getErrorMessage(error: unknown): string {
@@ -96,6 +123,240 @@ function formatDuration(seconds: number | null): string {
   return [hours, minutes, remainingSeconds].map((part) => String(part).padStart(2, '0')).join(':')
 }
 
+function formatNaturalNumber(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return ''
+  }
+
+  return String(Math.round(value))
+}
+
+function normalizeIsoTimestamp(value: string): string {
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(value)) {
+    return value
+  }
+
+  return `${value}Z`
+}
+
+function formatVietnamDateTime(value: string | null): string {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(normalizeIsoTimestamp(value))
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: VIETNAM_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const partValue = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? ''
+
+  return `${partValue('year')}-${partValue('month')}-${partValue('day')} ${partValue('hour')}:${partValue('minute')}:${partValue('second')}`
+}
+
+function getAverageScore(segments: AnomalySegment[], key: 'confidence_score' | 'anomaly_score'): number {
+  const total = segments.reduce((sum, segment) => sum + segment[key], 0)
+  return total / segments.length
+}
+
+function getMaxScore(segments: AnomalySegment[], key: 'confidence_score' | 'anomaly_score'): number {
+  return Math.max(...segments.map((segment) => segment[key]))
+}
+
+function getGroupReviewStatus(segments: AnomalySegment[]): QueueReportSegmentGroup['review_status'] {
+  const firstStatus = segments[0].review_status
+  const allSameStatus = segments.every((segment) => segment.review_status === firstStatus)
+  return allSameStatus ? firstStatus : 'MIXED'
+}
+
+function getGroupIsCorrect(segments: AnomalySegment[]): number | null {
+  const values = new Set(segments.map((segment) => segment.is_correct))
+  return values.size === 1 ? segments[0].is_correct : null
+}
+
+function getGroupVerifiedLabel(segments: AnomalySegment[]): AnomalyLabel | null {
+  const values = new Set(segments.map((segment) => segment.verified_label))
+  return values.size === 1 ? segments[0].verified_label : null
+}
+
+function getSharedNullableText(
+  segments: AnomalySegment[],
+  selector: (segment: AnomalySegment) => string | null,
+): string | null {
+  const values = new Set(segments.map(selector))
+  return values.size === 1 ? selector(segments[0]) : 'Mixed'
+}
+
+function toQueueReportSegmentGroup(segments: AnomalySegment[]): QueueReportSegmentGroup {
+  const firstSegment = segments[0]
+  const lastSegment = segments[segments.length - 1]
+
+  return {
+    segments,
+    start_time: firstSegment.start_time,
+    end_time: lastSegment.end_time,
+    predicted_class: firstSegment.predicted_class,
+    confidence_score: getAverageScore(segments, 'confidence_score'),
+    anomaly_score: getMaxScore(segments, 'anomaly_score'),
+    review_status: getGroupReviewStatus(segments),
+    is_correct: getGroupIsCorrect(segments),
+    verified_label: getGroupVerifiedLabel(segments),
+    other_description: getSharedNullableText(segments, (segment) => segment.other_description),
+    investigator_comment: getSharedNullableText(segments, (segment) => segment.investigator_comment),
+    feedback_submitted_at: getSharedNullableText(segments, (segment) => segment.feedback_submitted_at),
+  }
+}
+
+function groupQueueReportSegments(segments: AnomalySegment[]): QueueReportSegmentGroup[] {
+  const sortedSegments = [...segments].sort((left, right) => {
+    if (left.start_time !== right.start_time) {
+      return left.start_time - right.start_time
+    }
+
+    return left.segment_index - right.segment_index
+  })
+  const groups: AnomalySegment[][] = []
+
+  sortedSegments.forEach((segment) => {
+    const lastGroup = groups[groups.length - 1]
+    const lastSegment = lastGroup?.[lastGroup.length - 1]
+    const isSameActivity = lastSegment?.predicted_class === segment.predicted_class
+    const isTimeAdjacent =
+      lastSegment !== undefined &&
+      segment.start_time - lastSegment.end_time <= ADJACENT_SEGMENT_GAP_SECONDS
+
+    if (lastSegment && isSameActivity && isTimeAdjacent) {
+      lastGroup.push(segment)
+      return
+    }
+
+    groups.push([segment])
+  })
+
+  return groups.map(toQueueReportSegmentGroup)
+}
+
+function getQueueReportReviewStatus(group: QueueReportSegmentGroup): string {
+  if (group.review_status === 'MIXED') {
+    return 'Mixed'
+  }
+
+  return getReviewStatusDisplay(group.review_status, group.is_correct, group.verified_label).label
+}
+
+function escapeCsvCell(value: string | number | null): string {
+  const stringValue = value === null ? '' : String(value)
+  if (/[",\n\r]/.test(stringValue)) {
+    return `"${stringValue.replaceAll('"', '""')}"`
+  }
+
+  return stringValue
+}
+
+function downloadCsv(filename: string, csvContent: string) {
+  const blob = new Blob([`\uFEFF${csvContent}`], {
+    type: 'text/csv;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function buildQueueReportCsv(batch: BatchDetail, videoDetails: VideoDetail[]): string {
+  const headers = [
+    'Batch ID',
+    'Batch Name',
+    'Video ID',
+    'Video Name',
+    'Filename',
+    'Location',
+    'Video Status',
+    'Duration',
+    'Uploaded At',
+    'Updated At',
+    'Start Time',
+    'End Time',
+    'Predicted Activity',
+    'Confidence Score',
+    'Anomaly Score',
+    'Review Status',
+    'Verified Label',
+    'Other Description',
+    'Investigator Comment',
+    'Feedback Submitted At',
+  ]
+
+  const rows = videoDetails.flatMap((video) => {
+    if (video.segments.length === 0) {
+      return [[
+        batch.id,
+        batch.name ?? '',
+        video.id,
+        video.name,
+        video.filename,
+        video.location ?? '',
+        video.status,
+        formatNaturalNumber(video.duration),
+        formatVietnamDateTime(video.created_at),
+        formatVietnamDateTime(video.updated_at),
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]]
+    }
+
+    return groupQueueReportSegments(video.segments).map((group) => [
+      batch.id,
+      batch.name ?? '',
+      video.id,
+      video.name,
+      video.filename,
+      video.location ?? '',
+      video.status,
+      formatNaturalNumber(video.duration),
+      formatVietnamDateTime(video.created_at),
+      formatVietnamDateTime(video.updated_at),
+      formatNaturalNumber(group.start_time),
+      formatNaturalNumber(group.end_time),
+      group.predicted_class,
+      group.confidence_score,
+      group.anomaly_score,
+      getQueueReportReviewStatus(group),
+      group.verified_label,
+      group.other_description,
+      group.investigator_comment,
+      formatVietnamDateTime(group.feedback_submitted_at),
+    ])
+  })
+
+  return [headers, ...rows]
+    .map((row) => row.map(escapeCsvCell).join(','))
+    .join('\n')
+}
+
 function getProgressPercent(video: Video): number {
   if (video.status === 'COMPLETED') {
     return 100
@@ -122,6 +383,10 @@ function getProgressFillClass(status: VideoStatus): string {
 
 function isPollingTerminal(video: Video): boolean {
   return video.status === 'COMPLETED' || video.status === 'FAILED'
+}
+
+function isReportReady(video: Video): boolean {
+  return video.status === 'PENDING_CONFIRM' || video.status === 'COMPLETED'
 }
 
 function renderAction(
@@ -185,6 +450,7 @@ export function Queue() {
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [retryingVideoId, setRetryingVideoId] = useState<string | null>(null)
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false)
 
   const videos = useMemo(() => batch?.videos ?? [], [batch])
   const totalVideos = videos.length
@@ -204,6 +470,10 @@ export function Queue() {
   const pageStartIndex = (currentPage - 1) * ROWS_PER_PAGE
   const pageEndIndex = Math.min(pageStartIndex + ROWS_PER_PAGE, totalVideos)
   const visibleVideos = videos.slice(pageStartIndex, pageEndIndex)
+  const canDownloadReport = totalVideos > 0 && videos.every(isReportReady)
+  const canCancelAll = totalVideos > 0 && videos.some(
+    (video) => video.status === 'WAITING' || video.status === 'PROCESSING',
+  )
 
   const summaryCards = useMemo<SummaryCard[]>(
     () => [
@@ -307,6 +577,37 @@ export function Queue() {
     } finally {
       setRetryingVideoId(null)
     }
+  }
+
+  async function handleDownloadReport() {
+    if (!batch || !canDownloadReport) {
+      return
+    }
+
+    setIsDownloadingReport(true)
+    setError(null)
+    try {
+      const responses = await Promise.all(
+        batch.videos.map((video) => getVideoDetail(video.id)),
+      )
+      const details = responses.map((response) => {
+        if (!response.success || response.data === null) {
+          throw new Error(response.message)
+        }
+
+        return response.data
+      })
+      const csv = buildQueueReportCsv(batch, details)
+      downloadCsv(`queue-analysis-report-${batch.id}.csv`, csv)
+    } catch (downloadError) {
+      setError(getErrorMessage(downloadError))
+    } finally {
+      setIsDownloadingReport(false)
+    }
+  }
+
+  function handleCancelAll() {
+    setError('Cancel All requires a backend cancel endpoint and is not available in this demo yet.')
   }
 
   function goToPage(nextPage: number) {
@@ -417,15 +718,17 @@ export function Queue() {
               <button
                 type="button"
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#C3C6D7] bg-white px-4 py-2 text-sm font-semibold text-[#434655] transition disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
+                onClick={() => void handleDownloadReport()}
+                disabled={!canDownloadReport || isDownloadingReport}
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
-                Download Report
+                {isDownloadingReport ? 'Preparing CSV' : 'Download Report'}
               </button>
               <button
                 type="button"
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#C3C6D7] bg-white px-4 py-2 text-sm font-semibold text-[#434655] transition disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
+                onClick={handleCancelAll}
+                disabled={!canCancelAll}
               >
                 <XCircle className="h-4 w-4" aria-hidden="true" />
                 Cancel All

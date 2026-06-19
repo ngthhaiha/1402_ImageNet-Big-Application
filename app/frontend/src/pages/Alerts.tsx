@@ -21,9 +21,9 @@ import { AlertLogTable } from '../components/alerts/AlertLogTable'
 import { AlertStatsCard } from '../components/alerts/AlertStatsCard'
 import { CriticalAlertsTable } from '../components/alerts/CriticalAlertsTable'
 import { PageHeader } from '../components/PageHeader'
-import { Toast } from '../components/Toast'
 import type {
   AlertFilter,
+  AlertLogItem,
   AlertLogResponse,
   AlertStats,
   CriticalAlertItem,
@@ -54,6 +54,58 @@ function assertData<T>(response: { success: boolean; data: T | null; message: st
   return response.data
 }
 
+function escapeCsvCell(value: string | number | null): string {
+  const stringValue = value === null ? '' : String(value)
+  if (/[",\n\r]/.test(stringValue)) {
+    return `"${stringValue.replaceAll('"', '""')}"`
+  }
+
+  return stringValue
+}
+
+function buildAlertLogCsv(items: AlertLogItem[]): string {
+  const headers = [
+    'Time',
+    'Video Name',
+    'Activity Type',
+    'Confidence',
+    'Severity',
+    'Status',
+    'Start Time',
+    'End Time',
+    'Anomaly Score',
+  ]
+  const rows = items.map((item) => [
+    item.time,
+    item.filename,
+    item.activity_type,
+    `${(item.confidence_score * 100).toFixed(1)}%`,
+    item.severity,
+    item.status,
+    item.start_time,
+    item.end_time,
+    item.anomaly_score.toFixed(3),
+  ])
+
+  return [headers, ...rows]
+    .map((row) => row.map(escapeCsvCell).join(','))
+    .join('\n')
+}
+
+function downloadCsv(filename: string, csvContent: string) {
+  const blob = new Blob([`\uFEFF${csvContent}`], {
+    type: 'text/csv;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function Alerts() {
   const navigate = useNavigate()
   const [stats, setStats] = useState<AlertStats | null>(null)
@@ -63,8 +115,9 @@ export function Alerts() {
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlertItem[]>([])
   const [page, setPage] = useState(1)
   const [isLogLoading, setIsLogLoading] = useState(true)
+  const [isExportingLog, setIsExportingLog] = useState(false)
+  const [isFilterVisible, setIsFilterVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [toastOpen, setToastOpen] = useState(false)
 
   const statCards = useMemo(
     () => [
@@ -106,10 +159,6 @@ export function Alerts() {
     [stats],
   )
 
-  const showComingSoon = useCallback(() => {
-    setToastOpen(true)
-  }, [])
-
   const handleFilterChange = useCallback((nextFilter: AlertFilter) => {
     setFilter(nextFilter)
     setPage(1)
@@ -121,6 +170,27 @@ export function Alerts() {
     },
     [navigate],
   )
+
+  const handleExportAlertLog = useCallback(async () => {
+    setIsExportingLog(true)
+    try {
+      setError(null)
+      const firstResponse = assertData(await getAlertLog(filter, 1, 100))
+      const allItems = [...firstResponse.items]
+      for (let nextPage = 2; nextPage <= firstResponse.total_pages; nextPage += 1) {
+        const response = assertData(await getAlertLog(filter, nextPage, 100))
+        allItems.push(...response.items)
+      }
+
+      const csv = buildAlertLogCsv(allItems)
+      const today = new Date().toISOString().slice(0, 10)
+      downloadCsv(`alert-log-${today}.csv`, csv)
+    } catch (exportError) {
+      setError(getErrorMessage(exportError))
+    } finally {
+      setIsExportingLog(false)
+    }
+  }, [filter])
 
   useEffect(() => {
     let isMounted = true
@@ -187,14 +257,6 @@ export function Alerts() {
 
   return (
     <section className="alerts-page">
-      <Toast
-        open={toastOpen}
-        title="Coming soon"
-        message="This alerts action is not available in the demo yet."
-        variant="info"
-        onClose={() => setToastOpen(false)}
-      />
-
       <PageHeader pageName="Alert" />
 
       <div className="alerts-shell">
@@ -206,7 +268,9 @@ export function Alerts() {
           ))}
         </section>
 
-        <AlertFilterBar value={filter} onChange={handleFilterChange} />
+        {isFilterVisible ? (
+          <AlertFilterBar value={filter} onChange={handleFilterChange} />
+        ) : null}
 
         <section className="alerts-main-row">
           <div className="alerts-log-column">
@@ -216,7 +280,10 @@ export function Alerts() {
               page={page}
               onPageChange={setPage}
               onViewInvestigation={handleViewSegment}
-              onComingSoon={showComingSoon}
+              onToggleFilter={() => setIsFilterVisible((current) => !current)}
+              onExportCsv={() => void handleExportAlertLog()}
+              isFilterVisible={isFilterVisible}
+              isExporting={isExportingLog}
             />
           </div>
           <aside className="alerts-side-column">
