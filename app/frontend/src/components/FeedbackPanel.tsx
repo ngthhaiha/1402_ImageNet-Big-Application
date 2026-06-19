@@ -14,6 +14,9 @@ type FeedbackState = 'form' | 'detail'
 type LabelMode = 'label_correct' | 'edit'
 
 const INCORRECT_LABEL_OPTIONS: AnomalyLabel[] = ['Normal', 'Other']
+const ANOMALY_CATEGORY_OPTIONS = ANOMALY_LABELS.filter(
+  (label) => label !== 'Normal' && label !== 'Other',
+)
 
 function formatSubmittedAt(value: string | null): string {
   if (value === null) {
@@ -31,29 +34,49 @@ function formatSubmittedAt(value: string | null): string {
   })}`
 }
 
-function getDefaultEditedLabel(predictedLabel: AnomalyLabel): AnomalyLabel {
-  if (predictedLabel !== 'Normal') {
-    return 'Normal'
+function getCorrectEditLabelOptions(predictedLabel: AnomalyLabel): AnomalyLabel[] {
+  return [
+    ...ANOMALY_CATEGORY_OPTIONS.filter((label) => label !== predictedLabel),
+    'Other',
+  ]
+}
+
+function getEditableLabelOptions(
+  predictedLabel: AnomalyLabel,
+  isCorrect: boolean | null,
+): AnomalyLabel[] {
+  if (isCorrect === false) {
+    return INCORRECT_LABEL_OPTIONS
   }
 
-  return ANOMALY_LABELS.find((label) => label !== predictedLabel) ?? 'Other'
+  return getCorrectEditLabelOptions(predictedLabel)
+}
+
+function getDefaultEditedLabel(
+  predictedLabel: AnomalyLabel,
+  isCorrect: boolean | null,
+): AnomalyLabel {
+  return getEditableLabelOptions(predictedLabel, isCorrect)[0] ?? 'Other'
 }
 
 function createInitialFormState(segment: AnomalySegment) {
   const hasFeedback = segment.feedback_submitted_at !== null
+  const initialIsCorrect =
+    hasFeedback && segment.is_correct !== null ? segment.is_correct === 1 : null
   const savedVerifiedLabel = segment.verified_label ?? segment.predicted_class
   const labelMode: LabelMode | null = hasFeedback
     ? savedVerifiedLabel === segment.predicted_class && segment.is_correct !== 0
       ? 'label_correct'
       : 'edit'
     : null
+  const editableOptions = getEditableLabelOptions(segment.predicted_class, initialIsCorrect)
   const verifiedLabel =
-    labelMode === 'edit' && savedVerifiedLabel === segment.predicted_class
-      ? getDefaultEditedLabel(segment.predicted_class)
+    labelMode === 'edit' && !editableOptions.includes(savedVerifiedLabel)
+      ? getDefaultEditedLabel(segment.predicted_class, initialIsCorrect)
       : savedVerifiedLabel
 
   return {
-    isCorrect: hasFeedback && segment.is_correct !== null ? segment.is_correct === 1 : null,
+    isCorrect: initialIsCorrect,
     labelMode,
     verifiedLabel,
     otherDescription: segment.other_description ?? '',
@@ -105,10 +128,7 @@ export function FeedbackPanel({ segment, onFeedbackSubmitted }: FeedbackPanelPro
   }
 
   const activeSegment = segment
-  const editableLabels =
-    isCorrect === false
-      ? INCORRECT_LABEL_OPTIONS
-      : ANOMALY_LABELS.filter((label) => label !== activeSegment.predicted_class)
+  const editableLabels = getEditableLabelOptions(activeSegment.predicted_class, isCorrect)
   const isEditing = activeSegment.feedback_submitted_at !== null && feedbackState === 'form'
   const selectedVerifiedLabel =
     labelMode === 'edit' ? verifiedLabel : activeSegment.predicted_class
@@ -135,8 +155,11 @@ export function FeedbackPanel({ segment, onFeedbackSubmitted }: FeedbackPanelPro
       return
     }
 
-    if (labelMode === 'edit' && verifiedLabel === activeSegment.predicted_class) {
-      setVerifiedLabel(getDefaultEditedLabel(activeSegment.predicted_class))
+    if (labelMode === 'edit') {
+      const nextOptions = getEditableLabelOptions(activeSegment.predicted_class, true)
+      if (!nextOptions.includes(verifiedLabel)) {
+        setVerifiedLabel(getDefaultEditedLabel(activeSegment.predicted_class, true))
+      }
     }
   }
 
@@ -149,8 +172,11 @@ export function FeedbackPanel({ segment, onFeedbackSubmitted }: FeedbackPanelPro
     if (nextMode === 'label_correct') {
       setVerifiedLabel(activeSegment.predicted_class)
       setOtherDescription('')
-    } else if (verifiedLabel === activeSegment.predicted_class) {
-      setVerifiedLabel(getDefaultEditedLabel(activeSegment.predicted_class))
+    } else {
+      const nextOptions = getEditableLabelOptions(activeSegment.predicted_class, isCorrect)
+      if (!nextOptions.includes(verifiedLabel)) {
+        setVerifiedLabel(getDefaultEditedLabel(activeSegment.predicted_class, isCorrect))
+      }
     }
   }
 
